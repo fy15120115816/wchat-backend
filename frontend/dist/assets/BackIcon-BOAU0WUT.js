@@ -1,0 +1,1 @@
+import{d as o,x as r,y as t,f as s,z as n,A as l,B as p}from"./index-CfbPYMEx.js";const c={__name:"BackIcon",setup(i){return(e,a)=>(o(),r(p,n(l(e.$attrs)),{default:t(()=>[...a[0]||(a[0]=[s("line",{x1:"19",y1:"12",x2:"5",y2:"12"},null,-1),s("polyline",{points:"12 19 5 12 12 5"},null,-1)])]),_:1},16))}};export{c as _};

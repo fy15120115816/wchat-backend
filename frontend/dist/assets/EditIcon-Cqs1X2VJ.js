@@ -1,0 +1,1 @@
+import{o as e,A as r,B as o,a as s,C as n,D as p,E as l}from"./index-BSUfSNHS.js";const i={__name:"EditIcon",setup(_){return(t,a)=>(e(),r(l,n(p(t.$attrs)),{default:o(()=>[...a[0]||(a[0]=[s("path",{d:"M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"},null,-1),s("path",{d:"M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"},null,-1)])]),_:1},16))}};export{i as _};

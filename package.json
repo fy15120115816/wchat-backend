@@ -1,0 +1,18 @@
+{
+    "name": "xiao-wechat",
+    "version": "1.0.0",
+    "description": "小微信 - AI Chat 应用",
+    "scripts": {
+        "dev:frontend": "cd frontend && npm run dev",
+        "dev:backend": "cd backend && npm run dev",
+        "build:frontend": "cd frontend && npm run build",
+        "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install"
+    },
+    "keywords": [
+        "wechat",
+        "ai",
+        "chat"
+    ],
+    "author": "",
+    "license": "MIT"
+}

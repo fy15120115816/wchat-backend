@@ -1,0 +1,1 @@
+import{o,A as r,B as t,a as s,C as n,D as l,E as p}from"./index-D1ouioT7.js";const c={__name:"BackIcon",setup(i){return(e,a)=>(o(),r(p,n(l(e.$attrs)),{default:t(()=>[...a[0]||(a[0]=[s("line",{x1:"19",y1:"12",x2:"5",y2:"12"},null,-1),s("polyline",{points:"12 19 5 12 12 5"},null,-1)])]),_:1},16))}};export{c as _};
