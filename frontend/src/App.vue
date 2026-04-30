@@ -294,34 +294,15 @@ const urlBase64ToUint8Array = (base64String) => {
   return Uint8Array.from([...rawData].map(char => char.charCodeAt(0)));
 };
 
-// 注册 Service Worker 和推送订阅
+// 注册 Service Worker 和推送订阅（暂时禁用推送功能）
 const _registerPush = async () => {
-  if ('serviceWorker' in navigator && 'PushManager' in window) {
+  if ('serviceWorker' in navigator) {
     try {
+      // 暂时不注册推送功能，只注册基础 Service Worker
       const registration = await navigator.serviceWorker.register('/service-worker.js');
       console.log('✅ Service Worker 注册成功');
-      
-      // 请求通知权限
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-        // 获取或创建推送订阅
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(
-            'BNc4aF2w5qH9B6e8rT2yU7iO0pI3kL1mN9bM7vC2xZ8cV1bN5mK8jH7gF6dS4aD3sQ2wE1rT0yU9iO8pI7uY6tR5eW4qA3sD2fG1hJ6kL9zX8cV7bN4mK1jH0gF3dS6aD5fG8hJ9kL2xZ7cV4bN1mK3jH6gF2dS5aD8fG9hJ2kL5xZ8cV7bN4mK1jH3gF6dS2aD5fG8hJ'
-          )
-        });
-        
-        // 发送订阅到后端保存
-        await fetch('https://wchat-backend-production.up.railway.app/api/user/subscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subscription })
-        });
-        console.log('✅ 推送订阅已保存');
-      }
     } catch (error) {
-      console.error('❌ Service Worker 注册失败:', error);
+      console.warn('⚠️ Service Worker 注册跳过:', error.message);
     }
   }
 };

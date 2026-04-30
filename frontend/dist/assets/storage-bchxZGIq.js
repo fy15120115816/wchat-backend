@@ -1,1 +1,0 @@
-function n(e){try{const t=localStorage.getItem(e);return t?JSON.parse(t):null}catch{return null}}function o(e,t){try{return localStorage.setItem(e,JSON.stringify(t)),!0}catch(r){return console.error("localStorage setItem error:",r),!1}}function a(){return Date.now().toString(36)+Math.random().toString(36).substring(2)}export{a,n as g,o as s};
