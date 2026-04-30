@@ -10,6 +10,8 @@ const authRoutes = require('./routes/auth');
 const messageRoutes = require('./routes/message');
 const chatRoutes = require('./routes/chat');
 const aiCharacterRoutes = require('./routes/aiCharacter');
+const apiConfigRoutes = require('./routes/apiConfig');
+
 // 导入模型
 const Message = require('./models/Message');
 const Chat = require('./models/Chat');
@@ -28,12 +30,18 @@ const io = new Server(server, {
 
 // 中间件
 app.use(cors({
-    origin: '*',
+    origin: ['https://your-frontend.vercel.app', 'http://localhost:5173'],
     credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
+app.use('/api/apiConfig', apiConfigRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/message', messageRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/moment', momentRoutes);
+app.use('/api/character', aiCharacterRoutes);
+app.use('/api/config', apiConfigRoutes);
 // 健康检查
 app.get('/health', (req, res) => {
     res.status(200).json({
