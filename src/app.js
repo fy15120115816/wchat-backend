@@ -30,7 +30,7 @@ const io = new Server(server, {
 
 // 中间件
 app.use(cors({
-    origin: ['https://your-frontend.vercel.app', 'http://localhost:5173'],
+    origin: '*',
     credentials: true
 }));
 app.use(express.json());
