@@ -35,13 +35,14 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// 注册路由
 app.use('/api/apiConfig', apiConfigRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/message', messageRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/moment', momentRoutes);
 app.use('/api/character', aiCharacterRoutes);
-app.use('/api/config', apiConfigRoutes);
+
 // 健康检查
 app.get('/health', (req, res) => {
     res.status(200).json({
@@ -50,12 +51,6 @@ app.get('/health', (req, res) => {
     });
 });
 
-// 注册路由
-app.use('/api/auth', authRoutes);
-app.use('/api/message', messageRoutes);
-app.use('/api/chat', chatRoutes);
-app.use('/api/moment', momentRoutes);
-app.use('/api/character', aiCharacterRoutes);
 // WebSocket 连接处理
 const userSockets = new Map();
 
