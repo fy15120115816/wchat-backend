@@ -318,4 +318,10 @@ async function processAIReply(chatId, senderId, content) {
 }
 
 // 导出函数供其他模块使用
-module.exports = { processAIReply };
+module.exports = {
+    sendMessage: exports.sendMessage,
+    getMessages: exports.getMessages,
+    deleteMessage: exports.deleteMessage,
+    getUnreadCount: exports.getUnreadCount,
+    processAIReply
+};
