@@ -304,12 +304,21 @@ async function processAIReply(chatId, senderId, content) {
         console.log('✅ AI API响应状态:', response.status);
 
         const data = await response.json();
-        const aiReply = data.choices?.[0]?.message?.content;
+        let aiReply = data.choices?.[0]?.message?.content;
 
         if (!aiReply) {
             console.log('❌ AI返回为空');
             return;
         }
+
+        // 过滤AI返回的特殊标签（如 <thought>）和格式字符
+        aiReply = aiReply
+            .replace(/<\/?thought[^>]*>/g, '')  // 移除 <thought> 标签
+            .replace(/\*\s*/g, '')              // 移除星号
+            .replace(/^\s+|\s+$/g, '')          // 移除首尾空格
+            .trim();
+
+        console.log('✅ AI回复已过滤:', aiReply.slice(0, 50));
 
         // 创建AI回复消息
         const aiMessage = new Message({
