@@ -35,4 +35,40 @@ router.post('/subscribe', authMiddleware, async (req, res) => {
     }
 });
 
+// 测试推送通知
+router.post('/test-notification', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.userId);
+        
+        if (!user) {
+            return res.status(404).json({ success: false, message: '用户不存在' });
+        }
+        
+        if (!user.pushSubscription) {
+            return res.status(400).json({ success: false, message: '用户未开启通知，请先在设置中开启AI通知' });
+        }
+        
+        const webpush = require('web-push');
+        webpush.setVapidDetails(
+            'mailto:admin@example.com',
+            process.env.VAPID_PUBLIC_KEY,
+            process.env.VAPID_PRIVATE_KEY
+        );
+        
+        const payload = JSON.stringify({
+            title: '🔔 测试通知',
+            body: '这是一条测试通知，如果能看到这条消息，说明推送功能正常！',
+            url: '/chats'
+        });
+        
+        await webpush.sendNotification(user.pushSubscription, payload);
+        console.log('✅ 测试通知已发送');
+        
+        res.json({ success: true, message: '测试通知已发送' });
+    } catch (error) {
+        console.error('❌ 发送测试通知失败:', error);
+        res.status(500).json({ success: false, message: '发送失败: ' + error.message });
+    }
+});
+
 module.exports = router;
