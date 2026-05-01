@@ -89,9 +89,11 @@ router.post('/proxy', async (req, res) => {
                                 lastMessageAt: Date.now(),
                                 updatedAt: Date.now()
                             });
+                            console.log('✅ 聊天记录已更新');
                             
                             // 发送推送通知
                             const user = await User.findById(senderId);
+                            console.log('🔍 检查用户:', !!user, '推送订阅:', !!user?.pushSubscription);
                             if (user && user.pushSubscription) {
                                 const webpush = require('web-push');
                                 webpush.setVapidDetails(
@@ -104,8 +106,11 @@ router.post('/proxy', async (req, res) => {
                                     body: aiReply.slice(0, 50),
                                     url: `/chat/${chatId}`
                                 });
+                                console.log('📤 准备发送推送通知');
                                 await webpush.sendNotification(user.pushSubscription, payload);
                                 console.log('✅ AI回复推送通知已发送');
+                            } else {
+                                console.log('❌ 用户没有推送订阅，不发送推送通知');
                             }
                         }
                     }
