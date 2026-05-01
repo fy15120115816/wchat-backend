@@ -3,6 +3,7 @@ const Chat = require('../models/Chat');
 const User = require('../models/User');
 const AICharacter = require('../models/AICharacter');
 const ApiConfig = require('../models/ApiConfig');
+const webpush = require('web-push');
 
 // 发送消息
 exports.sendMessage = async (req, res) => {
@@ -290,7 +291,6 @@ async function processAIReply(chatId, senderId, content) {
         // 发送推送通知
         if (user.pushSubscription) {
             try {
-                const webpush = require('web-push');
                 webpush.setVapidDetails(
                     'mailto:admin@example.com',
                     process.env.VAPID_PUBLIC_KEY,
