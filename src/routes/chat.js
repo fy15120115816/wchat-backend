@@ -55,7 +55,7 @@ router.post('/proxy', async (req, res) => {
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
             const data = await response.json();
-            
+
             // 如果有 chatId 和 senderId，保存AI回复消息
             console.log('🔍 检查保存AI回复的条件: chatId:', !!chatId, 'senderId:', !!senderId);
             if (chatId && senderId) {
@@ -63,13 +63,27 @@ router.post('/proxy', async (req, res) => {
                     const Message = require('../models/Message');
                     const Chat = require('../models/Chat');
                     const User = require('../models/User');
-                    
-                    // 找到AI角色
-                    const chat = await Chat.findById(chatId);
+
+                    // 找到聊天记录
+                    let chat;
+
+                    // 如果 chatId 是 ai-xxx 格式，通过参与者查找
+                    if (chatId.startsWith('ai-')) {
+                        const aiId = chatId.replace('ai-', '');
+                        chat = await Chat.findOne({
+                            participants: {
+                                $all: [senderId, aiId]
+                            }
+                        });
+                    } else {
+                        // 否则尝试通过 ID 查找
+                        chat = await Chat.findById(chatId);
+                    }
+
                     console.log('🔍 找到聊天:', !!chat, 'participants:', chat?.participants);
                     const aiParticipant = chat?.participants?.find(p => p.toString().startsWith('ai-'));
                     console.log('🔍 找到AI角色:', !!aiParticipant);
-                    
+
                     if (aiParticipant) {
                         // 保存AI回复消息
                         const aiReply = data.choices?.[0]?.message?.content;
@@ -82,7 +96,7 @@ router.post('/proxy', async (req, res) => {
                             });
                             await aiMessage.save();
                             console.log('✅ AI回复已保存到数据库:', aiMessage._id);
-                            
+
                             // 更新聊天的最后消息
                             await Chat.findByIdAndUpdate(chatId, {
                                 lastMessage: aiMessage._id,
@@ -90,27 +104,38 @@ router.post('/proxy', async (req, res) => {
                                 updatedAt: Date.now()
                             });
                             console.log('✅ 聊天记录已更新');
-                            
+
                             // 发送推送通知
-                            const user = await User.findById(senderId);
-                            console.log('🔍 检查用户:', !!user, '推送订阅:', !!user?.pushSubscription);
-                            if (user && user.pushSubscription) {
-                                const webpush = require('web-push');
-                                webpush.setVapidDetails(
-                                    'mailto:admin@example.com',
-                                    process.env.VAPID_PUBLIC_KEY,
-                                    process.env.VAPID_PRIVATE_KEY
-                                );
-                                const payload = JSON.stringify({
-                                    title: 'AI助手',
-                                    body: aiReply.slice(0, 50),
-                                    url: `/chat/${chatId}`
-                                });
-                                console.log('📤 准备发送推送通知');
-                                await webpush.sendNotification(user.pushSubscription, payload);
-                                console.log('✅ AI回复推送通知已发送');
+                            console.log('🔍 senderId:', senderId);
+                            if (!senderId) {
+                                console.log('❌ senderId 为空，无法发送推送通知');
                             } else {
-                                console.log('❌ 用户没有推送订阅，不发送推送通知');
+                                const user = await User.findById(senderId);
+                                console.log('🔍 检查用户:', !!user, '推送订阅:', !!user?.pushSubscription);
+                                if (user && user.pushSubscription) {
+                                    // 使用统一的 pushService
+                                    const { sendPushNotification } = require('../services/pushService');
+                                    const payload = {
+                                        title: 'AI助手',
+                                        body: aiReply.slice(0, 50),
+                                        url: `/chat/${chatId}`
+                                    };
+                                    console.log('📤 准备发送推送通知');
+                                    const result = await sendPushNotification(user.pushSubscription, payload);
+                                    if (result.success) {
+                                        console.log('✅ AI回复推送通知已发送');
+                                    } else {
+                                        console.log('❌ 推送通知发送失败');
+                                        // 如果订阅过期，移除订阅
+                                        if (result.expired) {
+                                            user.pushSubscription = null;
+                                            await user.save();
+                                            console.log('✅ 已移除过期的推送订阅');
+                                        }
+                                    }
+                                } else {
+                                    console.log('❌ 用户没有推送订阅，不发送推送通知');
+                                }
                             }
                         }
                     }
@@ -118,7 +143,7 @@ router.post('/proxy', async (req, res) => {
                     console.error('❌ 保存AI回复失败:', saveError.message);
                 }
             }
-            
+
             res.status(response.status).json(data);
         } else {
             // 非 JSON 响应，返回原始文本
