@@ -3,6 +3,7 @@ const Chat = require('../models/Chat');
 const User = require('../models/User');
 const AICharacter = require('../models/AICharacter');
 const ApiConfig = require('../models/ApiConfig');
+const { sendPushNotification } = require('../services/pushService');
 
 // 发送消息
 exports.sendMessage = async (req, res) => {
@@ -59,20 +60,12 @@ exports.sendMessage = async (req, res) => {
                     const participant = await User.findById(participantId);
                     if (participant && participant.pushSubscription) {
                         try {
-                            const payload = JSON.stringify({
+                            const payload = {
                                 title: participant.nickname || participant.username || '新消息',
                                 body: content.slice(0, 50),
                                 url: `/chat/${chatId}`
-                            });
-
-                            // 使用 web-push 发送推送
-                            const webpush = require('web-push');
-                            webpush.setVapidDetails(
-                                'mailto:admin@example.com',
-                                process.env.VAPID_PUBLIC_KEY,
-                                process.env.VAPID_PRIVATE_KEY
-                            );
-                            await webpush.sendNotification(participant.pushSubscription, payload);
+                            };
+                            await sendPushNotification(participant.pushSubscription, payload);
                             console.log('✅ 推送通知已发送给:', participant.username);
                         } catch (pushError) {
                             console.error('❌ 推送通知发送失败:', pushError.message);
@@ -352,18 +345,12 @@ async function processAIReply(chatId, senderId, content) {
             console.log('📤 准备发送推送通知给用户:', user._id);
             console.log('📤 推送订阅信息:', JSON.stringify(user.pushSubscription));
             try {
-                const webpush = require('web-push');
-                webpush.setVapidDetails(
-                    'mailto:admin@example.com',
-                    process.env.VAPID_PUBLIC_KEY,
-                    process.env.VAPID_PRIVATE_KEY
-                );
-                const payload = JSON.stringify({
+                const payload = {
                     title: aiCharacter.name || 'AI助手',
                     body: aiReply.slice(0, 50),
                     url: `/chat/${chatId}`
-                });
-                await webpush.sendNotification(user.pushSubscription, payload);
+                };
+                await sendPushNotification(user.pushSubscription, payload);
                 console.log('✅ AI回复推送通知已发送');
             } catch (pushError) {
                 console.error('❌ AI回复推送失败:', pushError.message);
