@@ -21,7 +21,7 @@ router.delete('/:chatId', authMiddleware, chatController.deleteChat);
 // AI 请求代理（解决 CORS 问题）
 router.post('/proxy', async (req, res) => {
     try {
-        const { apiUrl, apiKey, body } = req.body;
+        const { apiUrl, apiKey, body, chatId, senderId } = req.body;
 
         console.log('🔄 收到代理请求:', { apiUrl: apiUrl?.substring(0, 50), hasApiKey: !!apiKey, hasBody: !!body });
 
@@ -55,6 +55,62 @@ router.post('/proxy', async (req, res) => {
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
             const data = await response.json();
+            
+            // 如果有 chatId 和 senderId，保存AI回复消息
+            if (chatId && senderId) {
+                try {
+                    const Message = require('../models/Message');
+                    const Chat = require('../models/Chat');
+                    const User = require('../models/User');
+                    
+                    // 找到AI角色
+                    const chat = await Chat.findById(chatId);
+                    const aiParticipant = chat?.participants?.find(p => p.toString().startsWith('ai-'));
+                    
+                    if (aiParticipant) {
+                        // 保存AI回复消息
+                        const aiReply = data.choices?.[0]?.message?.content;
+                        if (aiReply) {
+                            const aiMessage = new Message({
+                                chatId,
+                                senderId: aiParticipant,
+                                content: aiReply,
+                                type: 'text'
+                            });
+                            await aiMessage.save();
+                            console.log('✅ AI回复已保存到数据库:', aiMessage._id);
+                            
+                            // 更新聊天的最后消息
+                            await Chat.findByIdAndUpdate(chatId, {
+                                lastMessage: aiMessage._id,
+                                lastMessageAt: Date.now(),
+                                updatedAt: Date.now()
+                            });
+                            
+                            // 发送推送通知
+                            const user = await User.findById(senderId);
+                            if (user && user.pushSubscription) {
+                                const webpush = require('web-push');
+                                webpush.setVapidDetails(
+                                    'mailto:admin@example.com',
+                                    process.env.VAPID_PUBLIC_KEY,
+                                    process.env.VAPID_PRIVATE_KEY
+                                );
+                                const payload = JSON.stringify({
+                                    title: 'AI助手',
+                                    body: aiReply.slice(0, 50),
+                                    url: `/chat/${chatId}`
+                                });
+                                await webpush.sendNotification(user.pushSubscription, payload);
+                                console.log('✅ AI回复推送通知已发送');
+                            }
+                        }
+                    }
+                } catch (saveError) {
+                    console.error('❌ 保存AI回复失败:', saveError.message);
+                }
+            }
+            
             res.status(response.status).json(data);
         } else {
             // 非 JSON 响应，返回原始文本
