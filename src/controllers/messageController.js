@@ -321,6 +321,8 @@ async function processAIReply(chatId, senderId, content) {
 
         // 发送推送通知
         if (user.pushSubscription) {
+            console.log('📤 准备发送推送通知给用户:', user._id);
+            console.log('📤 推送订阅信息:', JSON.stringify(user.pushSubscription));
             try {
                 const webpush = require('web-push');
                 webpush.setVapidDetails(
