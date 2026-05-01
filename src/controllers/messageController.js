@@ -291,7 +291,7 @@ async function processAIReply(chatId, senderId, content) {
         // 创建AI回复消息
         const aiMessage = new Message({
             chatId,
-            senderId: aiParticipant._id,
+            senderId: aiParticipant,
             content: aiReply,
             type: 'text'
         });
