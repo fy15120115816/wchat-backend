@@ -1,7 +1,0 @@
-[33mcommit 6752cb21e825c72a266b81e57e91e4bd90ed3205[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
-Author: fy15120115816 <2660650520@qq.com>
-Date:   Fri May 1 03:29:16 2026 +0800
-
-    修复 CORS 配置，允许所有来源
-
-A	.gitignore
