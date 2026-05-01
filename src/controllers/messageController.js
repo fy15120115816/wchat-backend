@@ -212,10 +212,10 @@ async function processAIReply(chatId, senderId, content) {
             console.log('❌ 找不到AI角色参与者');
             return;
         }
-        console.log('✅ 找到AI角色:', aiParticipant.username);
+        console.log('✅ 找到AI角色:', aiParticipant);
 
         // 获取AI角色信息
-        const aiCharacter = await AICharacter.findOne({ userId: aiParticipant._id });
+        const aiCharacter = await AICharacter.findOne({ userId: aiParticipant });
         if (!aiCharacter) {
             console.log('❌ 找不到AI角色信息');
             return;
