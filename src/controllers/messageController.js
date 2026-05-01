@@ -88,9 +88,6 @@ exports.sendMessage = async (req, res) => {
             message: '消息发送成功',
             data: message
         });
-
-        // 后台异步处理AI回复（不阻塞响应）
-        processAIReply(chatId, senderId, content).catch(console.error);
     } catch (err) {
         console.error('发送消息错误:', err);
         res.status(500).json({
@@ -320,6 +317,7 @@ async function processAIReply(chatId, senderId, content) {
         });
 
         // 发送推送通知
+        console.log('🔍 检查用户推送订阅:', user._id, 'pushSubscription:', !!user.pushSubscription);
         if (user.pushSubscription) {
             console.log('📤 准备发送推送通知给用户:', user._id);
             console.log('📤 推送订阅信息:', JSON.stringify(user.pushSubscription));
