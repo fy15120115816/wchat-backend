@@ -201,7 +201,7 @@ exports.getUnreadCount = async (req, res) => {
 async function processAIReply(chatId, senderId, content) {
     try {
         console.log('🔄 开始处理AI回复, chatId:', chatId, 'senderId:', senderId);
-
+        
         // 获取聊天信息
         const chat = await Chat.findById(chatId).populate('participants');
         if (!chat) {
@@ -225,6 +225,15 @@ async function processAIReply(chatId, senderId, content) {
             return;
         }
         console.log('✅ 找到AI角色信息:', aiCharacter.name);
+
+        // 发送"正在输入"事件
+        const io = require('../app').io;
+        io.emit('typing', {
+            chatId,
+            userId: aiParticipant,
+            typing: true
+        });
+        console.log('📝 发送正在输入事件');
 
         // 获取用户的API配置
         const user = await User.findById(senderId);
@@ -308,6 +317,14 @@ async function processAIReply(chatId, senderId, content) {
 
         await aiMessage.save();
         console.log('✅ AI回复已保存:', aiMessage._id);
+
+        // 发送"停止输入"事件
+        io.emit('typing', {
+            chatId,
+            userId: aiParticipant,
+            typing: false
+        });
+        console.log('📝 发送停止输入事件');
 
         // 更新聊天的最后消息
         await Chat.findByIdAndUpdate(chatId, {

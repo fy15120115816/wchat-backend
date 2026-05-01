@@ -28,6 +28,9 @@ const io = new Server(server, {
     }
 });
 
+// 导出 io 对象供其他模块使用
+module.exports.io = io;
+
 // 中间件
 app.use(cors({
     origin: '*',
