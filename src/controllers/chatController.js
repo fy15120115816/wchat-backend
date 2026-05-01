@@ -33,7 +33,7 @@ exports.createChat = async (req, res) => {
             _id: require('crypto').randomUUID(),
             type,
             name,
-            participants: [...participants, req.user.userId]
+            participants: participants
         });
 
         await chat.save();
