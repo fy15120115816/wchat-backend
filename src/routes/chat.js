@@ -23,7 +23,7 @@ router.post('/proxy', async (req, res) => {
     try {
         const { apiUrl, apiKey, body, chatId, senderId } = req.body;
 
-        console.log('🔄 收到代理请求:', { apiUrl: apiUrl?.substring(0, 50), hasApiKey: !!apiKey, hasBody: !!body });
+        console.log('🔄 收到代理请求:', { apiUrl: apiUrl?.substring(0, 50), hasApiKey: !!apiKey, hasBody: !!body, chatId, senderId });
 
         if (!apiUrl || !body) {
             console.log('❌ 缺少必要参数:', { apiUrl: !!apiUrl, body: !!body });
@@ -57,6 +57,7 @@ router.post('/proxy', async (req, res) => {
             const data = await response.json();
             
             // 如果有 chatId 和 senderId，保存AI回复消息
+            console.log('🔍 检查保存AI回复的条件: chatId:', !!chatId, 'senderId:', !!senderId);
             if (chatId && senderId) {
                 try {
                     const Message = require('../models/Message');
@@ -65,7 +66,9 @@ router.post('/proxy', async (req, res) => {
                     
                     // 找到AI角色
                     const chat = await Chat.findById(chatId);
+                    console.log('🔍 找到聊天:', !!chat, 'participants:', chat?.participants);
                     const aiParticipant = chat?.participants?.find(p => p.toString().startsWith('ai-'));
+                    console.log('🔍 找到AI角色:', !!aiParticipant);
                     
                     if (aiParticipant) {
                         // 保存AI回复消息

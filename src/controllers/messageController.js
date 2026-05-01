@@ -44,8 +44,12 @@ exports.sendMessage = async (req, res) => {
         const chat = await Chat.findById(chatId);
 
         // 如果是AI角色聊天，后台异步处理AI回复（不阻塞响应）
+        console.log('🔍 检查AI角色聊天: chatId:', chatId, 'chat:', !!chat, 'participants:', chat?.participants);
         if (chat && chat.participants.some(p => p.toString().startsWith('ai-'))) {
+            console.log('✅ 检测到AI角色聊天，准备调用processAIReply');
             processAIReply(chatId, senderId, content).catch(console.error);
+        } else {
+            console.log('❌ 不是AI角色聊天，不调用processAIReply');
         }
 
         // 发送推送通知给其他参与者
