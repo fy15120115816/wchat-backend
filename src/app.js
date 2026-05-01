@@ -5,7 +5,6 @@ const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const momentRoutes = require('./routes/moment');
-const messageController = require('./controllers/messageController');
 // 导入路由
 const authRoutes = require('./routes/auth');
 const messageRoutes = require('./routes/message');
@@ -116,7 +115,8 @@ io.on('connection', (socket) => {
             // 如果是AI角色聊天，触发AI回复
             const aiParticipant = chat.participants.find(p => p.toString().startsWith('ai-'));
             if (aiParticipant) {
-                messageController.processAIReply(chatId, senderId, content);
+                // 动态导入避免循环依赖
+                require('./controllers/messageController').processAIReply(chatId, senderId, content);
             }
         } catch (err) {
             console.error('WebSocket 发送消息失败:', err);
