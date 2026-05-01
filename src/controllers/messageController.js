@@ -40,8 +40,15 @@ exports.sendMessage = async (req, res) => {
         });
         console.log('聊天记录已更新:', chatId);
 
-        // 发送推送通知给其他参与者
+        // 获取聊天信息
         const chat = await Chat.findById(chatId);
+
+        // 如果是AI角色聊天，后台异步处理AI回复（不阻塞响应）
+        if (chat && chat.participants.some(p => p.toString().startsWith('ai-'))) {
+            processAIReply(chatId, senderId, content).catch(console.error);
+        }
+
+        // 发送推送通知给其他参与者
         if (chat) {
             for (const participantId of chat.participants) {
                 if (participantId.toString() !== senderId) {
@@ -197,7 +204,7 @@ exports.getUnreadCount = async (req, res) => {
 async function processAIReply(chatId, senderId, content) {
     try {
         console.log('🔄 开始处理AI回复, chatId:', chatId, 'senderId:', senderId);
-        
+
         // 获取聊天信息
         const chat = await Chat.findById(chatId).populate('participants');
         if (!chat) {
