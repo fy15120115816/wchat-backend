@@ -267,18 +267,24 @@ async function processAIReply(chatId, senderId, content) {
 
         console.log('🔄 调用AI API:', apiUrl);
 
+        // 创建 AbortController 用于超时控制
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            controller.abort();
+        }, 60000); // 60秒超时
+
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 ...(apiKey && { 'Authorization': `Bearer ${apiKey}` })
             },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
         });
 
-        if (!response.ok) {
-            throw new Error(`API调用失败: ${response.status}`);
-        }
+        clearTimeout(timeoutId);
+        console.log('✅ AI API响应状态:', response.status);
 
         const data = await response.json();
         const aiReply = data.choices?.[0]?.message?.content;
