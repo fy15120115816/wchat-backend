@@ -1,6 +1,8 @@
 const Message = require('../models/Message');
 const Chat = require('../models/Chat');
 const User = require('../models/User');
+const AICharacter = require('../models/AICharacter');
+const ApiConfig = require('../models/ApiConfig');
 
 // 发送消息
 exports.sendMessage = async (req, res) => {
@@ -51,7 +53,7 @@ exports.sendMessage = async (req, res) => {
                                 body: content.slice(0, 50),
                                 url: `/chat/${chatId}`
                             });
-                            
+
                             // 使用 web-push 发送推送
                             const webpush = require('web-push');
                             webpush.setVapidDetails(
@@ -79,6 +81,9 @@ exports.sendMessage = async (req, res) => {
             message: '消息发送成功',
             data: message
         });
+
+        // 后台异步处理AI回复（不阻塞响应）
+        processAIReply(chatId, senderId, content).catch(console.error);
     } catch (err) {
         console.error('发送消息错误:', err);
         res.status(500).json({
@@ -187,3 +192,251 @@ exports.getUnreadCount = async (req, res) => {
         });
     }
 };
+
+// 处理AI回复（后台异步任务）
+async function processAIReply(chatId, senderId, content) {
+    try {
+        // 获取聊天信息
+        const chat = await Chat.findById(chatId).populate('participants');
+        if (!chat) return;
+
+        // 找出AI角色参与者
+        const aiParticipant = chat.participants.find(p => p.username?.startsWith('ai-'));
+        if (!aiParticipant) return;
+
+        // 获取AI角色信息
+        const aiCharacter = await AICharacter.findOne({ userId: aiParticipant._id });
+        if (!aiCharacter) return;
+
+        // 获取用户的API配置
+        const user = await User.findById(senderId);
+        if (!user) return;
+
+        const apiConfig = await ApiConfig.findOne({ userId: senderId, isDefault: true }) ||
+            await ApiConfig.findOne({ userId: senderId });
+        if (!apiConfig) {
+            console.log('❌ 用户未配置API');
+            return;
+        }
+
+        // 构建消息历史
+        const messages = await Message.find({ chatId })
+            .sort({ createdAt: 1 })
+            .populate('senderId', 'username');
+
+        const history = messages.map(msg => ({
+            role: msg.senderId.username?.startsWith('ai-') ? 'assistant' : 'user',
+            content: msg.content
+        }));
+
+        // 添加角色设定
+        const systemMessage = {
+            role: 'system',
+            content: aiCharacter.persona || '你是一个乐于助人的AI助手。'
+        };
+
+        // 调用AI API
+        const apiUrl = apiConfig.apiUrl;
+        const apiKey = apiConfig.apiKey;
+        const model = apiConfig.model || 'gpt-3.5-turbo';
+
+        const requestBody = {
+            model: model,
+            messages: [systemMessage, ...history],
+            stream: false
+        };
+
+        console.log('🔄 调用AI API:', apiUrl);
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(apiKey && { 'Authorization': `Bearer ${apiKey}` })
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            throw new Error(`API调用失败: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const aiReply = data.choices?.[0]?.message?.content;
+
+        if (!aiReply) {
+            console.log('❌ AI返回为空');
+            return;
+        }
+
+        // 创建AI回复消息
+        const aiMessage = new Message({
+            chatId,
+            senderId: aiParticipant._id,
+            content: aiReply,
+            type: 'text'
+        });
+
+        await aiMessage.save();
+        console.log('✅ AI回复已保存:', aiMessage._id);
+
+        // 更新聊天的最后消息
+        await Chat.findByIdAndUpdate(chatId, {
+            lastMessage: aiMessage._id,
+            lastMessageAt: Date.now(),
+            updatedAt: Date.now()
+        });
+
+        // 发送推送通知
+        if (user.pushSubscription) {
+            try {
+                const webpush = require('web-push');
+                webpush.setVapidDetails(
+                    'mailto:admin@example.com',
+                    process.env.VAPID_PUBLIC_KEY,
+                    process.env.VAPID_PRIVATE_KEY
+                );
+                const payload = JSON.stringify({
+                    title: aiCharacter.name || 'AI助手',
+                    body: aiReply.slice(0, 50),
+                    url: `/chat/${chatId}`
+                });
+                await webpush.sendNotification(user.pushSubscription, payload);
+                console.log('✅ AI回复推送通知已发送');
+            } catch (pushError) {
+                console.error('❌ AI回复推送失败:', pushError.message);
+                if (pushError.statusCode === 410) {
+                    user.pushSubscription = null;
+                    await user.save();
+                }
+            }
+        }
+
+    } catch (error) {
+        console.error('❌ 处理AI回复失败:', error.message);
+    }
+}
+
+// 处理AI回复（后台异步任务）
+async function processAIReply(chatId, senderId, content) {
+    try {
+        // 获取聊天信息
+        const chat = await Chat.findById(chatId).populate('participants');
+        if (!chat) return;
+
+        // 找出AI角色参与者
+        const aiParticipant = chat.participants.find(p => p.username?.startsWith('ai-'));
+        if (!aiParticipant) return;
+
+        // 获取AI角色信息
+        const aiCharacter = await AICharacter.findOne({ userId: aiParticipant._id });
+        if (!aiCharacter) return;
+
+        // 获取用户的API配置
+        const user = await User.findById(senderId);
+        if (!user) return;
+
+        const apiConfig = await ApiConfig.findOne({ userId: senderId, isDefault: true }) ||
+            await ApiConfig.findOne({ userId: senderId });
+        if (!apiConfig) {
+            console.log('❌ 用户未配置API');
+            return;
+        }
+
+        // 构建消息历史
+        const messages = await Message.find({ chatId })
+            .sort({ createdAt: 1 })
+            .populate('senderId', 'username');
+
+        const history = messages.map(msg => ({
+            role: msg.senderId.username?.startsWith('ai-') ? 'assistant' : 'user',
+            content: msg.content
+        }));
+
+        // 添加角色设定
+        const systemMessage = {
+            role: 'system',
+            content: aiCharacter.persona || '你是一个乐于助人的AI助手。'
+        };
+
+        // 调用AI API
+        const apiUrl = apiConfig.apiUrl;
+        const apiKey = apiConfig.apiKey;
+        const model = apiConfig.model || 'gpt-3.5-turbo';
+
+        const requestBody = {
+            model: model,
+            messages: [systemMessage, ...history],
+            stream: false
+        };
+
+        console.log('🔄 调用AI API:', apiUrl);
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(apiKey && { 'Authorization': `Bearer ${apiKey}` })
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            throw new Error(`API调用失败: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const aiReply = data.choices?.[0]?.message?.content;
+
+        if (!aiReply) {
+            console.log('❌ AI返回为空');
+            return;
+        }
+
+        // 创建AI回复消息
+        const aiMessage = new Message({
+            chatId,
+            senderId: aiParticipant._id,
+            content: aiReply,
+            type: 'text'
+        });
+
+        await aiMessage.save();
+        console.log('✅ AI回复已保存:', aiMessage._id);
+
+        // 更新聊天的最后消息
+        await Chat.findByIdAndUpdate(chatId, {
+            lastMessage: aiMessage._id,
+            lastMessageAt: Date.now(),
+            updatedAt: Date.now()
+        });
+
+        // 发送推送通知
+        if (user.pushSubscription) {
+            try {
+                const webpush = require('web-push');
+                webpush.setVapidDetails(
+                    'mailto:admin@example.com',
+                    process.env.VAPID_PUBLIC_KEY,
+                    process.env.VAPID_PRIVATE_KEY
+                );
+                const payload = JSON.stringify({
+                    title: aiCharacter.name || 'AI助手',
+                    body: aiReply.slice(0, 50),
+                    url: `/chat/${chatId}`
+                });
+                await webpush.sendNotification(user.pushSubscription, payload);
+                console.log('✅ AI回复推送通知已发送');
+            } catch (pushError) {
+                console.error('❌ AI回复推送失败:', pushError.message);
+                if (pushError.statusCode === 410) {
+                    user.pushSubscription = null;
+                    await user.save();
+                }
+            }
+        }
+
+    } catch (error) {
+        console.error('❌ 处理AI回复失败:', error.message);
+    }
+}
