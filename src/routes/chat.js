@@ -81,7 +81,11 @@ router.post('/proxy', async (req, res) => {
                     }
 
                     console.log('🔍 找到聊天:', !!chat, 'participants:', chat?.participants);
-                    const aiParticipant = chat?.participants?.find(p => p.toString().startsWith('ai-'));
+                    // 查找AI角色：优先找以ai-开头的，否则找不是用户的那个
+                    let aiParticipant = chat?.participants?.find(p => p.toString().startsWith('ai-'));
+                    if (!aiParticipant && chat?.participants?.length >= 2) {
+                        aiParticipant = chat?.participants?.find(p => p.toString() !== senderId);
+                    }
                     console.log('🔍 找到AI角色:', !!aiParticipant);
 
                     if (aiParticipant) {
