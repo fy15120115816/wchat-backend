@@ -30,6 +30,7 @@ exports.createChat = async (req, res) => {
 
         // 创建新聊天
         const chat = new Chat({
+            _id: require('crypto').randomUUID(),
             type,
             name,
             participants: [...participants, req.user.userId]
