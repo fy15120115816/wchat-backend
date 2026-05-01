@@ -196,21 +196,39 @@ exports.getUnreadCount = async (req, res) => {
 // 处理AI回复（后台异步任务）
 async function processAIReply(chatId, senderId, content) {
     try {
+        console.log('🔄 开始处理AI回复, chatId:', chatId, 'senderId:', senderId);
+        
         // 获取聊天信息
         const chat = await Chat.findById(chatId).populate('participants');
-        if (!chat) return;
+        if (!chat) {
+            console.log('❌ 找不到聊天, chatId:', chatId);
+            return;
+        }
+        console.log('✅ 找到聊天:', chat._id);
 
         // 找出AI角色参与者
         const aiParticipant = chat.participants.find(p => p.username?.startsWith('ai-'));
-        if (!aiParticipant) return;
+        if (!aiParticipant) {
+            console.log('❌ 找不到AI角色参与者');
+            return;
+        }
+        console.log('✅ 找到AI角色:', aiParticipant.username);
 
         // 获取AI角色信息
         const aiCharacter = await AICharacter.findOne({ userId: aiParticipant._id });
-        if (!aiCharacter) return;
+        if (!aiCharacter) {
+            console.log('❌ 找不到AI角色信息');
+            return;
+        }
+        console.log('✅ 找到AI角色信息:', aiCharacter.name);
 
         // 获取用户的API配置
         const user = await User.findById(senderId);
-        if (!user) return;
+        if (!user) {
+            console.log('❌ 找不到用户');
+            return;
+        }
+        console.log('✅ 找到用户:', user.username);
 
         const apiConfig = await ApiConfig.findOne({ userId: senderId, isDefault: true }) ||
             await ApiConfig.findOne({ userId: senderId });
@@ -218,6 +236,7 @@ async function processAIReply(chatId, senderId, content) {
             console.log('❌ 用户未配置API');
             return;
         }
+        console.log('✅ 找到API配置:', apiConfig.apiUrl);
 
         // 构建消息历史
         const messages = await Message.find({ chatId })
