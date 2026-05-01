@@ -207,7 +207,7 @@ async function processAIReply(chatId, senderId, content) {
         console.log('✅ 找到聊天:', chat._id);
 
         // 找出AI角色参与者
-        const aiParticipant = chat.participants.find(p => p.username?.startsWith('ai-'));
+        const aiParticipant = chat.participants.find(p => p.toString().startsWith('ai-'));
         if (!aiParticipant) {
             console.log('❌ 找不到AI角色参与者');
             return;
