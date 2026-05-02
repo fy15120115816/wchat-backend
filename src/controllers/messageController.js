@@ -175,18 +175,22 @@ exports.deleteAllMessages = async (req, res) => {
     try {
         let { chatId } = req.params;
 
-        console.log('清空聊天记录:', { chatId, userId: req.user.userId });
+        console.log('清空聊天记录请求:', { chatId, userId: req.user.userId });
 
         // 处理带 ai- 前缀的ID
         if (chatId.startsWith('ai-')) {
-            // AI聊天可能使用不同的存储方式
-            // 直接删除所有匹配的消息
-            await Message.deleteMany({ chatId });
-            console.log('✅ AI聊天记录已清空:', chatId);
+            // 先查找有多少条消息匹配
+            const count = await Message.countDocuments({ chatId });
+            console.log('AI聊天消息数量:', count);
+            
+            // 删除所有匹配的消息
+            const result = await Message.deleteMany({ chatId });
+            console.log('✅ AI聊天记录已清空, deletedCount:', result.deletedCount, 'chatId:', chatId);
 
             res.status(200).json({
                 success: true,
-                message: '聊天记录已清空'
+                message: '聊天记录已清空',
+                deletedCount: result.deletedCount
             });
             return;
         }
@@ -210,8 +214,8 @@ exports.deleteAllMessages = async (req, res) => {
         }
 
         // 删除所有消息
-        await Message.deleteMany({ chatId });
-        console.log('✅ 聊天记录已清空:', chatId);
+        const result = await Message.deleteMany({ chatId });
+        console.log('✅ 聊天记录已清空:', chatId, 'deletedCount:', result.deletedCount);
 
         // 更新聊天的最后消息
         await Chat.findByIdAndUpdate(chatId, {
@@ -222,7 +226,8 @@ exports.deleteAllMessages = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: '聊天记录已清空'
+            message: '聊天记录已清空',
+            deletedCount: result.deletedCount
         });
     } catch (err) {
         console.error('清空聊天记录错误:', err);
