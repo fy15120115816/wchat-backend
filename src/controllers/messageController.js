@@ -34,16 +34,34 @@ exports.sendMessage = async (req, res) => {
         await message.save();
         console.log('消息已保存到数据库:', message._id);
 
-        // 更新聊天的最后消息
-        await Chat.findByIdAndUpdate(chatId, {
-            lastMessage: message._id,
-            lastMessageAt: Date.now(),
-            updatedAt: Date.now()
-        });
+        // 获取或创建聊天记录
+        let chat = await Chat.findById(chatId);
+        
+        // 如果找不到聊天记录，且chatId以ai-开头，则创建一个新的聊天记录
+        if (!chat && chatId.startsWith('ai-')) {
+            console.log('⚠️ 找不到聊天记录，创建新的AI聊天:', chatId);
+            const aiCharacter = await AICharacter.findOne({ userId: chatId });
+            if (aiCharacter) {
+                chat = new Chat({
+                    _id: chatId,
+                    participants: [req.user.userId, chatId],
+                    type: 'private',
+                    lastMessage: message._id,
+                    lastMessageAt: Date.now(),
+                    updatedAt: Date.now()
+                });
+                await chat.save();
+                console.log('✅ 创建新的AI聊天:', chat._id);
+            }
+        } else if (!chat) {
+            // 更新聊天的最后消息
+            await Chat.findByIdAndUpdate(chatId, {
+                lastMessage: message._id,
+                lastMessageAt: Date.now(),
+                updatedAt: Date.now()
+            });
+        }
         console.log('聊天记录已更新:', chatId);
-
-        // 获取聊天信息
-        const chat = await Chat.findById(chatId);
 
         // 如果是AI角色聊天，后台异步处理AI回复（不阻塞响应）
         console.log('🔍 检查AI角色聊天: chatId:', chatId, 'chat:', !!chat, 'participants:', chat?.participants);
@@ -445,6 +463,7 @@ async function processAIReply(chatId, senderId, content) {
         console.log('✅ AI回复已拆分:', aiReplyChunks.length, '段');
 
         // 创建多条AI回复消息
+        let lastAiMessage = null;
         for (const chunk of aiReplyChunks) {
             const aiMessage = new Message({
                 chatId,
@@ -454,7 +473,8 @@ async function processAIReply(chatId, senderId, content) {
             });
 
             await aiMessage.save();
-            console.log('✅ AI回复片段已保存:', aiMessage._id);
+            lastAiMessage = aiMessage;
+            console.log('✅ AI回复片段已保存:', aiMessage._id, '内容:', chunk.slice(0, 30));
         }
 
         // 发送"停止输入"事件
@@ -466,11 +486,13 @@ async function processAIReply(chatId, senderId, content) {
         console.log('📝 发送停止输入事件');
 
         // 更新聊天的最后消息
-        await Chat.findByIdAndUpdate(chatId, {
-            lastMessage: aiMessage._id,
-            lastMessageAt: Date.now(),
-            updatedAt: Date.now()
-        });
+        if (lastAiMessage) {
+            await Chat.findByIdAndUpdate(chatId, {
+                lastMessage: lastAiMessage._id,
+                lastMessageAt: Date.now(),
+                updatedAt: Date.now()
+            });
+        }
 
         // 发送推送通知
         console.log('🔍 检查用户推送订阅:', user._id, 'pushSubscription:', !!user.pushSubscription);
