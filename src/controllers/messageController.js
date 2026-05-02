@@ -269,35 +269,55 @@ exports.getUnreadCount = async (req, res) => {
 };
 
 // 按句子边界分割消息（与前端 splitReply 一致）
-function splitReply(content, maxChunks = 3) {
+function splitReply(content, maxChunks) {
     if (!content) return [];
 
     const MAX_CHUNK_LENGTH = 50;
     const MAX_TOTAL_LENGTH = 150;
 
+    // 先截断总长度
     const trimmedContent = content.length > MAX_TOTAL_LENGTH
         ? content.substring(0, MAX_TOTAL_LENGTH).replace(/[^。？！\n]+$/, '') + '...'
         : content;
 
+    // 按句子边界分割：句号、问号、感叹号、换行
     const sentences = trimmedContent.split(/(?<=[。？！\n])(?=[^。？！\n])/g);
 
     const chunks = [];
     let buffer = '';
 
     for (const s of sentences) {
-        if ((buffer + s).length > MAX_CHUNK_LENGTH && buffer) {
+        const trimmed = s.trim();
+        if (!trimmed) continue;
+
+        // 如果加上当前句子会超过单段最大长度
+        if (buffer.length + trimmed.length > MAX_CHUNK_LENGTH && buffer.length > 0) {
+            // 如果当前buffer不为空，先输出
             chunks.push(buffer.trim());
-            buffer = s;
+            buffer = '';
+        }
+
+        // 将当前句子添加到buffer
+        if (buffer.length > 0) {
+            buffer += ' ' + trimmed;
         } else {
-            buffer += s;
+            buffer = trimmed;
         }
     }
 
-    if (buffer) {
+    // 输出最后一段
+    if (buffer.trim()) {
         chunks.push(buffer.trim());
     }
 
-    return chunks.slice(0, maxChunks);
+    // 限制最大段数
+    if (maxChunks && chunks.length > maxChunks) {
+        // 如果超过最大段数，合并最后几段
+        const remaining = chunks.slice(maxChunks - 1);
+        chunks.splice(maxChunks - 1, chunks.length - maxChunks + 1, remaining.join(' '));
+    }
+
+    return chunks;
 }
 
 // 处理AI回复（后台异步任务）
