@@ -8,10 +8,11 @@ const { sendPushNotification } = require('../services/pushService');
 // 发送消息
 exports.sendMessage = async (req, res) => {
     try {
-        const { chatId, content, type = 'text', image = '' } = req.body;
-        const senderId = req.user.userId;
+        const { chatId, content, type = 'text', image = '', senderId } = req.body;
+        // 如果请求中没有指定senderId，则使用当前登录用户的ID
+        const actualSenderId = senderId || req.user.userId;
 
-        console.log('收到消息请求:', { chatId, content, senderId });
+        console.log('收到消息请求:', { chatId, content, actualSenderId, senderIdFromBody: senderId });
 
         // 验证参数
         if (!chatId || !content) {
@@ -24,7 +25,7 @@ exports.sendMessage = async (req, res) => {
         // 创建消息
         const message = new Message({
             chatId,
-            senderId,
+            senderId: actualSenderId,
             content,
             type,
             image
@@ -198,7 +199,7 @@ exports.getUnreadCount = async (req, res) => {
 async function processAIReply(chatId, senderId, content) {
     try {
         console.log('🔄 开始处理AI回复, chatId:', chatId, 'senderId:', senderId);
-        
+
         // 获取聊天信息
         const chat = await Chat.findById(chatId).populate('participants');
         if (!chat) {
