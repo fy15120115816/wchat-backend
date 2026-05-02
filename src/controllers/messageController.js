@@ -104,6 +104,8 @@ exports.getMessages = async (req, res) => {
 
         const skip = (page - 1) * limit;
 
+        console.log('获取消息:', { chatId, userId: req.user.userId });
+
         // 获取消息（按时间倒序）
         const messages = await Message.find({ chatId })
             .populate('senderId', 'username avatar')
@@ -111,6 +113,8 @@ exports.getMessages = async (req, res) => {
             .skip(skip)
             .limit(limit)
             .lean();
+
+        console.log('找到消息:', messages.length, '条');
 
         // 标记消息为已读
         await Message.updateMany(
