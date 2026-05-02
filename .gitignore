@@ -1,0 +1,20 @@
+# 前端
+frontend/node_modules
+frontend/dist
+frontend/.env
+frontend/.env.local
+
+# 后端
+backend/node_modules
+backend/.env
+backend/.env.local
+
+# 根目录
+node_modules
+.DS_Store
+.vscode
+.idea
+*.log
+*.tmp
+*.temp
+.cache

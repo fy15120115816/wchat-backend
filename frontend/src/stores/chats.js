@@ -131,8 +131,13 @@ export const useChatsStore = defineStore('chats', () => {
     }
   }
 
-  // 获取消息列表（从后端）
-  const fetchMessages = async (chatId) => {
+  // 获取消息列表（优先从本地缓存，避免重复请求）
+  const fetchMessages = async (chatId, forceRefresh = false) => {
+    // 如果本地已有消息且没有强制刷新，直接返回
+    if (!forceRefresh && messages.value[chatId] && messages.value[chatId].length > 0) {
+      return
+    }
+
     try {
       const result = await apiRequest(`/message/${chatId}`)
       if (result.success) {
@@ -199,12 +204,36 @@ export const useChatsStore = defineStore('chats', () => {
         // 同时保存到 localStorage
         const key = `ai-chat-ai-${chatId}`
         try {
-          localStorage.setItem(key, JSON.stringify(messages.value[chatId]))
+          localStorage.setItem(key, JSON.stringify(messages.value[chatId] || []))
         } catch { }
-        return result
       }
+      return result
     } catch (error) {
-      console.error('删除消息失败:', error)
+      throw error
+    }
+  }
+
+  // 清空聊天记录（从后端）
+  const deleteAllMessages = async (chatId) => {
+    try {
+      const result = await apiRequest(`/message/chat/${chatId}`, {
+        method: 'DELETE'
+      })
+      if (result.success) {
+        // 清空本地存储
+        if (messages.value[chatId]) {
+          messages.value[chatId] = []
+        }
+        // 清空 localStorage
+        const userKey = `ai-chat-user-${chatId}`
+        const aiKey = `ai-chat-ai-${chatId}`
+        try {
+          localStorage.removeItem(userKey)
+          localStorage.removeItem(aiKey)
+        } catch { }
+      }
+      return result
+    } catch (error) {
       throw error
     }
   }
@@ -278,6 +307,8 @@ export const useChatsStore = defineStore('chats', () => {
     fetchMessages,
     sendMessage,
     deleteMessage,
+    deleteAllMessages,
     createChat
   }
 })
+

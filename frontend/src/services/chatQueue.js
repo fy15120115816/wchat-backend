@@ -51,7 +51,10 @@ const _processNext = async () => {
       : config.apiUrl.replace(/\/$/, '') + '/chat/completions'
 
     // 使用后端代理
-    const proxyUrl = '/api/chat/proxy'
+    const proxyUrl = 'https://wchat-backend-production.up.railway.app/api/chat/proxy'
+    const userStore = useUserStore()
+    const userId = userStore.userId
+    const actualChatId = task.chatId || `ai-${task.charId}`
 
     // 获取当前时间，格式：2026年4月26日 21:15 周六 晚上
     const now = new Date()
@@ -167,7 +170,9 @@ const _processNext = async () => {
           body: JSON.stringify({
             apiUrl: apiBaseUrl,
             apiKey: config.apiKey,
-            body: body
+            body: body,
+            chatId: actualChatId,
+            senderId: userId
           })
         })
 
@@ -254,6 +259,11 @@ const _processNext = async () => {
 
     // 分段写入 storage，模拟真人打字效果
     const chatKey = `ai-chat-ai-${task.routeId}`
+    
+    // AI回复由后端processAIReply保存，前端不再重复保存
+    const saveToBackend = async (msgData) => {
+      console.log('⚠️ AI回复由后端保存，前端跳过保存')
+    }
 
     // 如果有表情包图片，作为单独一条消息
     if (emojiImage) {
@@ -276,6 +286,8 @@ const _processNext = async () => {
             }
             msgs.push(imgMsg)
             localStorage.setItem(chatKey, JSON.stringify(msgs))
+            // 保存到后端
+            saveToBackend(imgMsg)
           }
         } catch { }
       }, 300)
@@ -306,6 +318,8 @@ const _processNext = async () => {
             }
             msgs.push(chunkMsg)
             localStorage.setItem(chatKey, JSON.stringify(msgs))
+            // 保存到后端
+            saveToBackend(chunkMsg)
           }
         } catch { }
       }, delay)

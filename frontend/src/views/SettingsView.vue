@@ -116,6 +116,20 @@
           <span class="item-arrow">›</span>
         </div>
       </div>
+
+      <!-- 退出登录 -->
+      <div class="settings-section">
+        <div class="settings-item logout-item" @click="openLogoutDialog">
+          <span class="item-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #FF4757">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+          </span>
+          <span class="item-label">退出登录</span>
+        </div>
+      </div>
     </div>
 
     <!-- 头像昵称弹窗 -->
@@ -255,10 +269,33 @@
     @confirm="showNotifyDialog = false"
     @cancel="showNotifyDialog = false"
   />
+
+  <!-- 退出登录对话框 -->
+  <ConfirmDialog
+    :visible="showLogoutDialog"
+    title="退出登录"
+    message="确定要退出登录吗？"
+    ok-text="退出"
+    cancel-text="取消"
+    @confirm="handleLogout"
+    @cancel="showLogoutDialog = false"
+  />
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+
+// 转换 VAPID 公钥
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 import { useUserStore } from '@/stores/user'
 import ProfileEditModal from '@/components/ProfileEditModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -375,7 +412,7 @@ const handleBasicInfoSave = () => {
   showBasicInfoModal.value = false
 }
 
-const toggleNotify = () => {
+const toggleNotify = async () => {
   const next = !userStore.user.aiNotify
   userStore.updateUser({ aiNotify: next })
   
@@ -395,27 +432,134 @@ const toggleNotify = () => {
       return
     }
     
-    // 如果权限已授权，直接提示
+    // 如果权限已授权，直接注册 Service Worker
     if (Notification.permission === 'granted') {
-      notifyDialogContent.value = '通知权限已开启\n\n当您离开聊天界面时，新消息会以桌面通知形式提醒您'
+      
+      // 检查是否支持 Service Worker
+      if (!('serviceWorker' in navigator)) {
+        console.log('⚠️ 浏览器不支持 Service Worker');
+        notifyDialogContent.value = '通知权限已开启！\n\n注意：当前环境不支持后台推送（需要HTTPS或localhost）。\n打开应用时可以收到通知。';
+        showNotifyDialog.value = true;
+        return;
+      }
+      
+      // 权限已授予，现在注册 Service Worker 并保存订阅
+      try {
+        let registration = await navigator.serviceWorker.getRegistration();
+        if (!registration) {
+          registration = await navigator.serviceWorker.register('/service-worker.js');
+          console.log('✅ Service Worker 注册成功');
+        } else {
+          console.log('✅ Service Worker 已注册');
+        }
+        
+        // 检查是否已有订阅
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(
+              'BO8Hqu9fbcifxKlUqnI_oz_Q5b0Lw5mzdgu99_vxJvixgF6lnuR9c0b7PFqEzkmG33HQxcUXbHlhEuD5BKmDlVs'
+            )
+          });
+          console.log('✅ 推送订阅成功');
+        } else {
+          console.log('✅ 推送订阅已存在');
+        }
+        
+        // 将订阅信息发送到后端保存
+        const token = localStorage.getItem('auth-token') || localStorage.getItem('token');
+        if (!token) {
+          console.warn('⚠️ 未找到认证 token，无法保存推送订阅');
+          notifyDialogContent.value = '通知权限已开启，但无法保存订阅（未登录）';
+          showNotifyDialog.value = true;
+          return;
+        }
+        
+        const response = await fetch('https://wchat-backend-production.up.railway.app/api/auth/subscribe', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ subscription })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        notifyDialogContent.value = '通知权限已开启，订阅成功！\n\n当您离开聊天界面时，新消息会以桌面通知形式提醒您'
+        console.log('✅ 推送订阅成功');
+      } catch (error) {
+        console.error('❌ 注册推送订阅失败:', error);
+        notifyDialogContent.value = '通知权限已开启，但推送订阅失败: ' + error.message;
+      }
       showNotifyDialog.value = true
       return
     }
     
     // 权限状态为 default，请求权限（这会弹出浏览器的权限对话框）
-    Notification.requestPermission().then(perm => {
-      if (perm === 'granted') {
-        notifyDialogContent.value = '通知权限已开启\n\n当您离开聊天界面时，新消息会以桌面通知形式提醒您'
-      } else if (perm === 'denied') {
-        notifyDialogContent.value = '通知权限已被拒绝\n\n如需开启通知，请在浏览器设置中手动开启'
-      } else {
-        notifyDialogContent.value = '通知权限请求已取消'
+    const perm = await Notification.requestPermission();
+    if (perm === 'granted') {
+      // 权限已授予，现在注册 Service Worker 并保存订阅
+      try {
+        let registration = await navigator.serviceWorker.getRegistration();
+        if (!registration) {
+          registration = await navigator.serviceWorker.register('/service-worker.js');
+          console.log('✅ Service Worker 注册成功');
+        } else {
+          console.log('✅ Service Worker 已注册');
+        }
+        
+        // 检查是否已有订阅
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(
+              'BO8Hqu9fbcifxKlUqnI_oz_Q5b0Lw5mzdgu99_vxJvixgF6lnuR9c0b7PFqEzkmG33HQxcUXbHlhEuD5BKmDlVs'
+            )
+          });
+          console.log('✅ 推送订阅成功');
+        } else {
+          console.log('✅ 推送订阅已存在');
+        }
+        
+        // 将订阅信息发送到后端保存
+        const token = localStorage.getItem('auth-token') || localStorage.getItem('token');
+        if (!token) {
+          console.warn('⚠️ 未找到认证 token，无法保存推送订阅');
+          notifyDialogContent.value = '通知权限已开启，但无法保存订阅（未登录）';
+          showNotifyDialog.value = true;
+          return;
+        }
+        
+        const response = await fetch('https://wchat-backend-production.up.railway.app/api/auth/subscribe', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ subscription })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        notifyDialogContent.value = '通知权限已开启，订阅成功！\n\n当您离开聊天界面时，新消息会以桌面通知形式提醒您'
+        console.log('✅ 推送订阅成功');
+      } catch (error) {
+        console.error('❌ 注册推送订阅失败:', error);
+        notifyDialogContent.value = '通知权限已开启，但推送订阅失败: ' + error.message;
       }
-      showNotifyDialog.value = true
-    }).catch(err => {
-      notifyDialogContent.value = '请求通知权限失败: ' + err.message
-      showNotifyDialog.value = true
-    })
+    } else if (perm === 'denied') {
+      notifyDialogContent.value = '通知权限已被拒绝\n\n如需开启通知，请在浏览器设置中手动开启'
+    } else {
+      notifyDialogContent.value = '通知权限请求已取消'
+    }
+    showNotifyDialog.value = true
   }
 }
 
@@ -576,6 +720,20 @@ const importMemory = () => {
     reader.readAsText(file)
   }
   input.click()
+}
+
+const showLogoutDialog = ref(false)
+
+// 显示退出登录弹窗
+const openLogoutDialog = () => {
+  showLogoutDialog.value = true
+}
+
+// 退出登录
+const handleLogout = () => {
+  localStorage.removeItem('auth-token')
+  localStorage.removeItem('token')
+  window.location.href = '/'
 }
 </script>
 

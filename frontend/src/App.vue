@@ -41,6 +41,7 @@ import TabBar from '@/components/TabBar.vue'
 import { useMomentsStore } from '@/stores/moments'
 import { useUserStore } from '@/stores/user'
 import { useAiCharactersStore } from '@/stores/aiCharacters'
+import { useChatsStore } from '@/stores/chats'
 import { sendProactiveMsg } from '@/services/chatQueue'
 
 const route = useRoute()
@@ -48,6 +49,7 @@ const router = useRouter()
 const momentsStore = useMomentsStore()
 const userStore = useUserStore()
 const aiCharactersStore = useAiCharactersStore()
+const chatsStore = useChatsStore()
 const commentInputRef = ref(null)
 
 // AI 消息通知弹窗
@@ -294,16 +296,66 @@ const urlBase64ToUint8Array = (base64String) => {
   return Uint8Array.from([...rawData].map(char => char.charCodeAt(0)));
 };
 
-// 注册 Service Worker 和推送订阅（暂时禁用推送功能）
+// 注册 Service Worker 和推送订阅
+
 const _registerPush = async () => {
-  if ('serviceWorker' in navigator) {
-    try {
-      // 暂时不注册推送功能，只注册基础 Service Worker
-      const registration = await navigator.serviceWorker.register('/service-worker.js');
-      console.log('✅ Service Worker 注册成功');
-    } catch (error) {
-      console.warn('⚠️ Service Worker 注册跳过:', error.message);
+  // 检查浏览器支持
+  if (!('serviceWorker' in navigator && 'PushManager' in window)) {
+    console.log('⚠️ 浏览器不支持 Service Worker 或 Push API');
+    return;
+  }
+  
+  // 检查通知权限
+  if (Notification.permission !== 'granted') {
+    console.log('⚠️ 通知权限未授予，跳过推送订阅');
+    return;
+  }
+  
+  // 检查用户是否开启通知
+  if (!userStore.user?.aiNotify) {
+    console.log('⚠️ 用户未开启AI通知，跳过推送订阅');
+    return;
+  }
+  
+  try {
+    const registration = await navigator.serviceWorker.register('/service-worker.js');
+    console.log('✅ Service Worker 注册成功');
+    
+    const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(
+          'BO8Hqu9fbcifxKlUqnI_oz_Q5b0Lw5mzdgu99_vxJvixgF6lnuR9c0b7PFqEzkmG33HQxcUXbHlhEuD5BKmDlVs'
+        )
+      });
+    
+    // 将订阅信息发送到后端保存
+    const token = localStorage.getItem('auth-token') || localStorage.getItem('token');
+    if (!token) {
+      console.warn('⚠️ 未找到认证 token，无法保存推送订阅');
+      return;
     }
+    
+    const response = await fetch('https://wchat-backend-production.up.railway.app/api/auth/subscribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ subscription })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    if (result.success) {
+      console.log('✅ 推送订阅成功');
+    } else {
+      console.error('❌ 推送订阅保存失败:', result.message);
+    }
+  } catch (error) {
+    console.error('❌ 推送订阅注册失败:', error.message);
   }
 };
 
@@ -311,10 +363,20 @@ onMounted(() => {
   _startNotifyLoop()
   _startProactiveLoop()
   momentsStore.startAIMomentsScheduler()
+  
+  // 从后端加载聊天记录
+  chatsStore.fetchChats()
+  
+  // 请求通知权限
   if (userStore.user.aiNotify && Notification.permission === 'default') {
-    Notification.requestPermission()
+    Notification.requestPermission().then(permission => {
+      if (permission === 'granted') {
+        _registerPush();
+      }
+    });
+  } else if (Notification.permission === 'granted') {
+    _registerPush();
   }
-  _registerPush()
 })
 onUnmounted(() => {
   if (_notifyInterval) clearInterval(_notifyInterval)

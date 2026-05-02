@@ -29,13 +29,58 @@ export const useApiConfigsStore = defineStore('apiConfigs', () => {
     return configs.value.find(c => c.isDefault) || configs.value[0] || null
   })
 
+  // 从后端同步配置
+  async function syncFromBackend() {
+    try {
+      const response = await apiRequest('/apiConfig')
+      if (response.success && response.data) {
+        configs.value = response.data
+        setItem(STORAGE_KEY, configs.value)
+      }
+    } catch (error) {
+      console.error('同步API配置失败:', error)
+    }
+  }
+
+  // 保存配置到后端
+  async function saveToBackend(config) {
+    try {
+      const response = await apiRequest('/apiConfig', {
+        method: config._id ? 'PUT' : 'POST',
+        body: JSON.stringify(config)
+      })
+      if (response.success) {
+        await syncFromBackend()
+        return response.data
+      }
+    } catch (error) {
+      console.error('保存API配置失败:', error)
+      throw error
+    }
+  }
+
+  // 删除后端配置
+  async function deleteFromBackend(configId) {
+    try {
+      const response = await apiRequest(`/apiConfig/${configId}`, {
+        method: 'DELETE'
+      })
+      if (response.success) {
+        await syncFromBackend()
+      }
+    } catch (error) {
+      console.error('删除API配置失败:', error)
+      throw error
+    }
+  }
+
   const save = () => {
     setItem(STORAGE_KEY, configs.value)
   }
 
   const fetchConfigs = async () => {
     try {
-      const result = await apiRequest('/config')
+      const result = await apiRequest('/apiConfig')
       if (result.success) {
         configs.value = result.data.map(c => ({
           ...c,
@@ -57,7 +102,7 @@ export const useApiConfigsStore = defineStore('apiConfigs', () => {
     }
 
     try {
-      const result = await apiRequest('/config', {
+      const result = await apiRequest('/apiConfig', {
         method: 'POST',
         body: JSON.stringify(newConfig)
       })
@@ -75,7 +120,7 @@ export const useApiConfigsStore = defineStore('apiConfigs', () => {
 
   const updateConfig = async (id, updates) => {
     try {
-      const result = await apiRequest(`/config/${id}`, {
+      const result = await apiRequest(`/apiConfig/${id}`, {
         method: 'PUT',
         body: JSON.stringify(updates)
       })
@@ -96,7 +141,7 @@ export const useApiConfigsStore = defineStore('apiConfigs', () => {
 
   const deleteConfig = async (id) => {
     try {
-      const result = await apiRequest(`/config/${id}`, {
+      const result = await apiRequest(`/apiConfig/${id}`, {
         method: 'DELETE'
       })
       if (result.success) {
@@ -125,7 +170,7 @@ export const useApiConfigsStore = defineStore('apiConfigs', () => {
     })
     save()
     try {
-      await apiRequest(`/config/${id}`, {
+      await apiRequest(`/apiConfig/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ isDefault: true })
       })

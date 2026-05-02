@@ -92,7 +92,7 @@ export async function getChatSummaryFromBackend(characterId) {
     const token = localStorage.getItem('auth-token')
     if (!token) return ''
 
-    const response = await fetch(`/api/character/${characterId}`, {
+    const response = await fetch(`https://wchat-backend-production.up.railway.app/api/character/${characterId}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
     const result = await response.json()
@@ -117,7 +117,7 @@ export async function saveChatSummary(characterId, summary) {
     const token = localStorage.getItem('auth-token')
     if (!token) return
 
-    const response = await fetch(`/api/character/${characterId}`, {
+    const response = await fetch(`https://wchat-backend-production.up.railway.app/api/character/${characterId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',

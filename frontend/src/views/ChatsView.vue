@@ -177,7 +177,9 @@ const _loadGroups = () => {
   groups.value = groupList.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // 先从后端加载聊天记录
+  await chatsStore.fetchChats()
   _loadAiChatData()
   _loadGroups()
   // 延迟 500ms 再加载一次，确保退出聊天时 markAIRead 完成后再读

@@ -118,6 +118,10 @@
         v-model="inputText"
         :placeholder="inputText ? '' : '输入消息...'"
         @keyup.enter="handleSend"
+        autocomplete="new-password"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
       />
       <svg :size="24" class="footer-icon" @click="showPlusMenu = !showPlusMenu; showEmojiPicker = false" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       <button class="send-btn" @click="handleSend" :disabled="!inputText.trim()">发送</button>
@@ -234,7 +238,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useChatsStore } from '@/stores/chats'
 import { useAiCharactersStore } from '@/stores/aiCharacters'
@@ -277,6 +281,8 @@ const showModal = ref(false)
 const editingCharacter = ref(null)
 const isTyping = ref(false)
 let stopTypingWatch = null
+let keyboardHeight = ref(0)
+let handleResizeFn = null
 
 // 背景选项
 const backgroundOptions = [
@@ -367,8 +373,107 @@ const loadGroupInfo = () => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadGroupInfo()
+  
+  // 从后端加载最新消息
+  if (!isAI.value && !isGroup.value) {
+    chatsStore.fetchMessages(route.params.id)
+  }
+  
+  // 监听窗口resize，处理键盘弹出
+  handleResizeFn = () => {
+    const footer = document.querySelector('.chat-footer')
+    const pageContent = document.querySelector('.page-content')
+    if (footer && pageContent) {
+      // 检查是否在全屏模式
+      const isFullscreen = document.fullscreenElement != null
+      
+      // 只有在全屏模式下才手动处理键盘弹出
+      // 非全屏模式下让浏览器自动处理
+      if (!isFullscreen) {
+        // 重置为默认状态
+        keyboardHeight.value = 0
+        footer.style.bottom = '0px'
+        pageContent.style.paddingBottom = '80px'
+        return
+      }
+      
+      // 全屏模式下计算键盘高度
+      const visualViewport = window.visualViewport
+      let kbHeight = 0
+      
+      if (visualViewport) {
+        // 使用 visualViewport API 检测键盘
+        const viewportHeight = visualViewport.height
+        const windowHeight = window.innerHeight
+        kbHeight = Math.max(0, windowHeight - viewportHeight)
+      } else {
+        // 降级方案：使用 innerHeight 变化检测
+        const footerRect = footer.getBoundingClientRect()
+        kbHeight = Math.max(0, window.innerHeight - footerRect.bottom)
+      }
+      
+      // 全屏模式下需要额外增加偏移量来处理输入法工具栏（钥匙/银行卡图标那一行）
+      // 输入法工具栏大约高 40-50px
+      const toolbarOffset = 50
+      const totalKbHeight = kbHeight + toolbarOffset
+      
+      // 阈值判断：超过 100px 认为键盘弹出
+      if (kbHeight > 100) {
+        keyboardHeight.value = totalKbHeight
+        footer.style.bottom = totalKbHeight + 'px'
+        pageContent.style.paddingBottom = (80 + totalKbHeight) + 'px'
+      } else {
+        keyboardHeight.value = 0
+        footer.style.bottom = '0px'
+        pageContent.style.paddingBottom = '80px'
+      }
+    }
+  }
+  
+  window.addEventListener('resize', handleResizeFn)
+  
+  // 监听 visualViewport（如果可用）
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', handleResizeFn)
+  }
+  
+  // 初始检查
+  handleResizeFn()
+})
+
+// 组件被激活时重新绑定事件监听器（处理从缓存返回的情况）
+onActivated(() => {
+  if (handleResizeFn) {
+    window.addEventListener('resize', handleResizeFn)
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleResizeFn)
+    }
+    handleResizeFn()
+  }
+  
+  // 从后端加载最新消息
+  if (!isAI.value && !isGroup.value) {
+    chatsStore.fetchMessages(route.params.id)
+  }
+})
+
+// 组件被停用时移除事件监听器
+onDeactivated(() => {
+  if (handleResizeFn) {
+    window.removeEventListener('resize', handleResizeFn)
+    if (window.visualViewport) {
+      window.visualViewport.removeEventListener('resize', handleResizeFn)
+    }
+  }
+})
+
+// 监听路由参数变化，重新加载消息
+watch(() => route.params.id, (newId) => {
+  if (newId && !isAI.value && !isGroup.value) {
+    chatsStore.fetchMessages(newId)
+  }
 })
 
 // Mock 模式数据
@@ -693,6 +798,9 @@ const getAIReply = async (char, context) => {
     stream: false
   })
   
+  // 使用后端代理解决CORS问题
+  const proxyUrl = 'https://wchat-backend-production.up.railway.app/api/chat/proxy'
+  
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
   
   // 添加重试机制，最多重试2次
@@ -702,13 +810,18 @@ const getAIReply = async (char, context) => {
         await sleep(Math.random() * 800)
       }
       
-      const response = await fetch(apiBaseUrl, {
+      const response = await fetch(proxyUrl, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`
+          'Content-Type': 'application/json'
         },
-        body
+        body: JSON.stringify({
+          apiUrl: apiBaseUrl,
+          apiKey: config.apiKey,
+          body: JSON.parse(body),
+          chatId: `ai-${aiId.value}`,
+          senderId: userStore.userId
+        })
       })
       
       const raw = await response.text()
@@ -808,11 +921,22 @@ const clearChat = () => {
   showClearConfirm.value = true
 }
 
-const doClearChat = () => {
+const doClearChat = async () => {
   showClearConfirm.value = false
+  const chatId = route.params.id
+  
+  try {
+    // 先从后端清空消息
+    await chatsStore.deleteAllMessages(chatId)
+    console.log('✅ 后端聊天记录已清空')
+  } catch (error) {
+    console.error('❌ 清空后端聊天记录失败:', error)
+  }
+  
+  // 再清空本地存储
   if (isAI.value) {
-    localStorage.removeItem(`ai-chat-ai-${route.params.id}`)
-    localStorage.removeItem(`ai-chat-user-${route.params.id}`)
+    localStorage.removeItem(`ai-chat-ai-${chatId}`)
+    localStorage.removeItem(`ai-chat-user-${chatId}`)
     aiMessages.value = []
   } else if (isGroup.value) {
     localStorage.removeItem(groupKey.value)
@@ -883,7 +1007,16 @@ const sendAIMessage = async (text) => {
 
   // 发送消息到后端
   try {
-    await chatsStore.sendMessage(aiId.value, text)
+    // 验证 aiId 是否存在
+    if (!aiId.value) {
+      console.error('❌ aiId 为空，无法创建聊天');
+      return;
+    }
+    
+    // 使用 ai-${aiId} 格式的 chatId，与AI回复保持一致
+    const chatId = `ai-${aiId.value}`
+    console.log('📤 发送消息到后端, chatId:', chatId)
+    await chatsStore.sendMessage(chatId, text)
   } catch (error) {
     console.error('发送消息失败:', error)
   }
@@ -904,7 +1037,9 @@ const sendAIMessage = async (text) => {
     momentsCount: momentsStore.moments.length,
     momentsInfo: momentsStore.moments.map((m, idx) => `${idx + 1}. 【${m.userName}】${m.content || '[图片]'}${m.likes.length > 0 ? ' ❤️' + m.likes.length + '赞' : ''}${m.comments.length > 0 ? ' 💬' + m.comments.map(c => `${c.userName}：${c.content}`).join('； ') : ''}`).join('\n'),
     maxReplyMessages: aiCharacter.value?.maxReplyMessages,
-    history: aiMessages.value.slice(0, -1).map(m => ({ role: m.type === 'self' ? 'user' : 'assistant', content: m.content, image: m.image }))
+    history: aiMessages.value.slice(0, -1).map(m => ({ role: m.type === 'self' ? 'user' : 'assistant', content: m.content, image: m.image })),
+    chatId: `ai-${aiId.value}`,
+    userId: userStore.userId
   })
 }
 
@@ -1038,7 +1173,7 @@ let pollTimer = null
 let pollInterval = 3000
 let _typingDoneTimer = null
 
-onMounted(() => {
+onMounted(async () => {
   startChatQueue()
   
   // 加载背景：优先使用全局背景
@@ -1057,22 +1192,114 @@ onMounted(() => {
   if (isAI.value) {
     setActiveChat(route.params.id)
 
-    // 每次进入聊天都重新从 storage 加载消息
+    // 先检查本地是否有缓存，有就优先使用本地缓存
     const userRaw = localStorage.getItem(userKey.value)
     const aiRaw = localStorage.getItem(aiKey.value)
-    const userMsgs = userRaw ? (JSON.parse(userRaw) || []) : []
-    const aiMsgs = aiRaw ? (JSON.parse(aiRaw) || []) : []
-    // 动作描写关闭时，过滤掉括号内的动作内容
-    if (!aiCharacter.value?.hasActions) {
-      for (const m of aiMsgs) {
-        m.content = (m.content || '')
-          .replace(/【[^】]*】/g, '')
-          .replace(/（[^）]*）/g, '')
-          .replace(/\([^)]*\)/g, '')
-          .trim()
+    const localUserMsgs = userRaw ? (JSON.parse(userRaw) || []) : []
+    const localAiMsgs = aiRaw ? (JSON.parse(aiRaw) || []) : []
+    
+    if (localUserMsgs.length > 0 || localAiMsgs.length > 0) {
+      // 本地有缓存，直接使用
+      console.log('📦 使用本地缓存的聊天消息')
+      const userMsgs = localUserMsgs
+      let aiMsgs = localAiMsgs
+      
+      // 动作描写关闭时，过滤掉括号内的动作内容
+      if (!aiCharacter.value?.hasActions) {
+        aiMsgs = aiMsgs.map(m => ({
+          ...m,
+          content: (m.content || '')
+            .replace(/【[^】]*】/g, '')
+            .replace(/（[^）]*）/g, '')
+            .replace(/\([^)]*\)/g, '')
+            .trim()
+        }))
+      }
+      
+      aiMessages.value = [...userMsgs, ...aiMsgs].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+    } else {
+      // 本地没有缓存，才从后端加载
+      console.log('🔄 本地无缓存，从后端加载消息, chatId:', route.params.id)
+      
+      // 先尝试从后端加载消息，实现跨设备同步
+      const loadAIMessages = async () => {
+        try {
+          const chatId = route.params.id
+          const token = localStorage.getItem('auth-token') || localStorage.getItem('token')
+          if (!token) return null
+          
+          const response = await fetch(`https://wchat-backend-production.up.railway.app/api/message/${chatId}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          })
+          
+          if (response.ok) {
+            const result = await response.json()
+            if (result.success && result.data && result.data.length > 0) {
+              console.log('✅ 从后端加载了', result.data.length, '条AI聊天消息')
+              return result.data
+            }
+          }
+        } catch (error) {
+          console.log('❌ 从后端加载AI消息失败:', error.message)
+        }
+        return null
+      }
+      
+      const backendMsgs = await loadAIMessages()
+      
+      if (backendMsgs !== null) {
+        // 成功连接到后端
+        if (backendMsgs.length > 0) {
+          // 使用后端消息
+          const userId = userStore.userId || localStorage.getItem('user-id') || ''
+          console.log('✅ 从后端加载了', backendMsgs.length, '条消息')
+          
+          const formattedMsgs = backendMsgs.map(msg => {
+            // 处理 senderId：可能是字符串或对象（populate后）
+            let senderIdStr = ''
+            if (typeof msg.senderId === 'object') {
+              senderIdStr = msg.senderId._id ? msg.senderId._id.toString() : ''
+            } else if (typeof msg.senderId === 'string') {
+              senderIdStr = msg.senderId
+            }
+            
+            // 判断消息类型
+            const isSelf = senderIdStr === userId
+            const msgType = isSelf ? 'self' : 'other'
+            
+            return {
+              id: msg._id,
+              type: msgType,
+              content: msg.content,
+              image: msg.image || undefined,
+              createdAt: new Date(msg.createdAt).getTime()
+            }
+          })
+          aiMessages.value = formattedMsgs
+          
+          // 同步到 localStorage
+          try {
+            const userMsgs = formattedMsgs.filter(m => m.type === 'self')
+            const aiMsgs = formattedMsgs.filter(m => m.type === 'other')
+            localStorage.setItem(userKey.value, JSON.stringify(userMsgs))
+            localStorage.setItem(aiKey.value, JSON.stringify(aiMsgs))
+          } catch {}
+        } else {
+          // 后端返回空数组（消息被清空），清空本地存储
+          console.log('✅ 后端消息已清空，同步清空本地存储')
+          aiMessages.value = []
+          try {
+            localStorage.removeItem(userKey.value)
+            localStorage.removeItem(aiKey.value)
+          } catch {}
+        }
+      } else {
+        // 无法连接到后端，使用本地 localStorage（虽然这里刚检查过是空的）
+        console.log('⚠️ 无法连接到后端')
       }
     }
-    aiMessages.value = [...userMsgs, ...aiMsgs].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
 
     // 进入聊天标记已读
     chatsStore.markAIRead(route.params.id)
@@ -1186,6 +1413,12 @@ onUnmounted(() => {
     stopTypingWatch?.()
     pollInterval = 3000
   }
+  
+  // 清理键盘监听
+  if (handleResizeFn) {
+    window.removeEventListener('resize', handleResizeFn)
+    handleResizeFn = null
+  }
 })
 </script>
 
@@ -1276,7 +1509,7 @@ onUnmounted(() => {
   flex: 1;
   overflow-y: auto;
   background-color: var(--bg-chat);
-  padding: 8px 0;
+  padding: 8px 0 80px;
   min-height: 0;
   background-size: cover;
   background-position: center;
@@ -1405,6 +1638,13 @@ onUnmounted(() => {
   gap: 8px;
   background-color: var(--bg-white);
   flex-shrink: 0;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  transition: bottom 0.3s ease;
 }
 
 .footer-icon {
@@ -1427,6 +1667,7 @@ onUnmounted(() => {
   padding: 0 10px;
   font-size: var(--font-size-md);
   outline: none;
+  min-width: 0;
   font-family: inherit;
   background: var(--bg-white);
 }
