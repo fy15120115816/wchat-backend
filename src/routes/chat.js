@@ -3,6 +3,58 @@ const router = express.Router();
 const chatController = require('../controllers/chatController');
 const authMiddleware = require('../middleware/auth');
 
+// 按句子边界分割消息（与前端 splitReply 一致）
+function splitReply(content, maxChunks) {
+    if (!content) return [];
+
+    const MAX_CHUNK_LENGTH = 50;
+    const MAX_TOTAL_LENGTH = 150;
+
+    // 先截断总长度
+    const trimmedContent = content.length > MAX_TOTAL_LENGTH
+        ? content.substring(0, MAX_TOTAL_LENGTH).replace(/[^。？！\n]+$/, '') + '...'
+        : content;
+
+    // 按句子边界分割：句号、问号、感叹号、换行
+    const sentences = trimmedContent.split(/(?<=[。？！\n])(?=[^。？！\n])/g);
+
+    const chunks = [];
+    let buffer = '';
+
+    for (const s of sentences) {
+        const trimmed = s.trim();
+        if (!trimmed) continue;
+
+        // 如果加上当前句子会超过单段最大长度
+        if (buffer.length + trimmed.length > MAX_CHUNK_LENGTH && buffer.length > 0) {
+            // 如果当前buffer不为空，先输出
+            chunks.push(buffer.trim());
+            buffer = '';
+        }
+
+        // 将当前句子添加到buffer
+        if (buffer.length > 0) {
+            buffer += ' ' + trimmed;
+        } else {
+            buffer = trimmed;
+        }
+    }
+
+    // 输出最后一段
+    if (buffer.trim()) {
+        chunks.push(buffer.trim());
+    }
+
+    // 限制最大段数
+    if (maxChunks && chunks.length > maxChunks) {
+        // 如果超过最大段数，合并最后几段
+        const remaining = chunks.slice(maxChunks - 1);
+        chunks.splice(maxChunks - 1, chunks.length - maxChunks + 1, remaining.join(' '));
+    }
+
+    return chunks;
+}
+
 // 创建聊天
 router.post('/', authMiddleware, chatController.createChat);
 
@@ -92,14 +144,32 @@ router.post('/proxy', async (req, res) => {
                         // 保存AI回复消息
                         const aiReply = data.choices?.[0]?.message?.content;
                         if (aiReply) {
-                            const aiMessage = new Message({
-                                chatId,
-                                senderId: aiParticipant,
-                                content: aiReply,
-                                type: 'text'
-                            });
-                            await aiMessage.save();
-                            console.log('✅ AI回复已保存到数据库:', aiMessage._id);
+                            // 按句子边界拆分AI回复
+                            const aiReplyChunks = splitReply(aiReply, 3);
+                            console.log('✅ AI回复已拆分:', aiReplyChunks.length, '段');
+
+                            let lastAiMessage = null;
+                            for (const chunk of aiReplyChunks) {
+                                const aiMessage = new Message({
+                                    chatId,
+                                    senderId: aiParticipant,
+                                    content: chunk,
+                                    type: 'text'
+                                });
+                                await aiMessage.save();
+                                lastAiMessage = aiMessage;
+                                console.log('✅ AI回复片段已保存:', aiMessage._id, '内容:', chunk.slice(0, 30));
+                            }
+
+                            // 更新聊天的最后消息
+                            if (lastAiMessage) {
+                                await Chat.findByIdAndUpdate(chatId, {
+                                    lastMessage: lastAiMessage._id,
+                                    lastMessageAt: Date.now(),
+                                    updatedAt: Date.now()
+                                });
+                            }
+                            console.log('✅ 聊天记录已更新');
 
                             // 更新聊天的最后消息
                             await Chat.findByIdAndUpdate(chatId, {
