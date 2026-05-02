@@ -268,6 +268,38 @@ exports.getUnreadCount = async (req, res) => {
     }
 };
 
+// 按句子边界分割消息（与前端 splitReply 一致）
+function splitReply(content, maxChunks = 3) {
+    if (!content) return [];
+
+    const MAX_CHUNK_LENGTH = 50;
+    const MAX_TOTAL_LENGTH = 150;
+
+    const trimmedContent = content.length > MAX_TOTAL_LENGTH
+        ? content.substring(0, MAX_TOTAL_LENGTH).replace(/[^。？！\n]+$/, '') + '...'
+        : content;
+
+    const sentences = trimmedContent.split(/(?<=[。？！\n])(?=[^。？！\n])/g);
+
+    const chunks = [];
+    let buffer = '';
+
+    for (const s of sentences) {
+        if ((buffer + s).length > MAX_CHUNK_LENGTH && buffer) {
+            chunks.push(buffer.trim());
+            buffer = s;
+        } else {
+            buffer += s;
+        }
+    }
+
+    if (buffer) {
+        chunks.push(buffer.trim());
+    }
+
+    return chunks.slice(0, maxChunks);
+}
+
 // 处理AI回复（后台异步任务）
 async function processAIReply(chatId, senderId, content) {
     try {
@@ -387,16 +419,23 @@ async function processAIReply(chatId, senderId, content) {
 
         console.log('✅ AI回复已过滤:', aiReply.slice(0, 50));
 
-        // 创建AI回复消息
-        const aiMessage = new Message({
-            chatId,
-            senderId: aiParticipant,
-            content: aiReply,
-            type: 'text'
-        });
+        // 按句子边界拆分AI回复（与前端一致）
+        const maxReplyMessages = aiCharacter.maxReplyMessages || 3;
+        const aiReplyChunks = splitReply(aiReply, maxReplyMessages);
+        console.log('✅ AI回复已拆分:', aiReplyChunks.length, '段');
 
-        await aiMessage.save();
-        console.log('✅ AI回复已保存:', aiMessage._id);
+        // 创建多条AI回复消息
+        for (const chunk of aiReplyChunks) {
+            const aiMessage = new Message({
+                chatId,
+                senderId: aiParticipant,
+                content: chunk,
+                type: 'text'
+            });
+
+            await aiMessage.save();
+            console.log('✅ AI回复片段已保存:', aiMessage._id);
+        }
 
         // 发送"停止输入"事件
         io.emit('typing', {
