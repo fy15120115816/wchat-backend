@@ -49,7 +49,7 @@ exports.sendMessage = async (req, res) => {
         console.log('🔍 检查AI角色聊天: chatId:', chatId, 'chat:', !!chat, 'participants:', chat?.participants);
         if (chat && chat.participants.some(p => p.toString().startsWith('ai-'))) {
             console.log('✅ 检测到AI角色聊天，准备调用processAIReply');
-            processAIReply(chatId, senderId, content).catch(console.error);
+            processAIReply(chatId, actualSenderId, content).catch(console.error);
         } else {
             console.log('❌ 不是AI角色聊天，不调用processAIReply');
         }
