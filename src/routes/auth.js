@@ -51,8 +51,8 @@ router.post('/test-notification', authMiddleware, async (req, res) => {
         const webpush = require('web-push');
         webpush.setVapidDetails(
             'mailto:admin@example.com',
-            process.env.VAPID_PUBLIC_KEY,
-            process.env.VAPID_PRIVATE_KEY
+            process.env.VAPID_PUBLIC_KEY || 'BO8Hqu9fbcifxKlUqnI_oz_Q5b0Lw5mzdgu99_vxJvixgF6lnuR9c0b7PFqEzkmG33HQxcUXbHlhEuD5BKmDlVs',
+            process.env.VAPID_PRIVATE_KEY || 'QpTE7--OnW9vDaa9RYg4Emu3Q44MBSP9xSBjmlYSFlg'
         );
         
         const payload = JSON.stringify({
