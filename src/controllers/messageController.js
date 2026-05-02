@@ -170,6 +170,70 @@ exports.deleteMessage = async (req, res) => {
     }
 };
 
+// 删除聊天的所有消息（清空聊天记录）
+exports.deleteAllMessages = async (req, res) => {
+    try {
+        let { chatId } = req.params;
+
+        console.log('清空聊天记录:', { chatId, userId: req.user.userId });
+
+        // 处理带 ai- 前缀的ID
+        if (chatId.startsWith('ai-')) {
+            // AI聊天可能使用不同的存储方式
+            // 直接删除所有匹配的消息
+            await Message.deleteMany({ chatId });
+            console.log('✅ AI聊天记录已清空:', chatId);
+
+            res.status(200).json({
+                success: true,
+                message: '聊天记录已清空'
+            });
+            return;
+        }
+
+        // 验证聊天存在
+        const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({
+                success: false,
+                message: '聊天不存在'
+            });
+        }
+
+        // 验证用户是否是聊天参与者
+        const isParticipant = chat.participants.some(p => p.toString() === req.user.userId);
+        if (!isParticipant) {
+            return res.status(403).json({
+                success: false,
+                message: '无权清空此聊天记录'
+            });
+        }
+
+        // 删除所有消息
+        await Message.deleteMany({ chatId });
+        console.log('✅ 聊天记录已清空:', chatId);
+
+        // 更新聊天的最后消息
+        await Chat.findByIdAndUpdate(chatId, {
+            lastMessage: null,
+            lastMessageAt: Date.now(),
+            updatedAt: Date.now()
+        });
+
+        res.status(200).json({
+            success: true,
+            message: '聊天记录已清空'
+        });
+    } catch (err) {
+        console.error('清空聊天记录错误:', err);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误',
+            error: err.message
+        });
+    }
+};
+
 // 获取未读消息数
 exports.getUnreadCount = async (req, res) => {
     try {

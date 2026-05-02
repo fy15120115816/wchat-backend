@@ -9,6 +9,9 @@ router.post('/', authMiddleware, messageController.sendMessage);
 // 获取聊天消息
 router.get('/:chatId', authMiddleware, messageController.getMessages);
 
+// 清空聊天记录
+router.delete('/chat/:chatId', authMiddleware, messageController.deleteAllMessages);
+
 // 删除消息
 router.delete('/:messageId', authMiddleware, messageController.deleteMessage);
 
