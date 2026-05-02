@@ -433,9 +433,11 @@ async function processAIReply(chatId, senderId, content) {
 
 // 导出函数供其他模块使用
 module.exports = {
+// 导出函数供其他模块使用
     sendMessage: exports.sendMessage,
     getMessages: exports.getMessages,
     deleteMessage: exports.deleteMessage,
+    deleteAllMessages: exports.deleteAllMessages,
     getUnreadCount: exports.getUnreadCount,
     processAIReply
 };
