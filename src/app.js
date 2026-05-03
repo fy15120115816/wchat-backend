@@ -11,6 +11,7 @@ const messageRoutes = require('./routes/message');
 const chatRoutes = require('./routes/chat');
 const aiCharacterRoutes = require('./routes/aiCharacter');
 const apiConfigRoutes = require('./routes/apiConfig');
+const userRoutes = require('./routes/user');
 
 // 导入模型
 const Message = require('./models/Message');
@@ -45,6 +46,7 @@ app.use('/api/message', messageRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/moment', momentRoutes);
 app.use('/api/character', aiCharacterRoutes);
+app.use('/api/user', userRoutes);
 
 // 健康检查
 app.get('/health', (req, res) => {
