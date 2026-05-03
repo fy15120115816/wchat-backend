@@ -34,6 +34,10 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    globalSystemPrompt: {
+        type: String,
+        default: ''
+    },
     pushSubscription: { type: Object, default: null }, // 推送订阅
     createdAt: {
         type: Date,

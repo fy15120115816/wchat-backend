@@ -161,12 +161,13 @@ exports.getCurrentUser = async (req, res) => {
 // 更新用户信息
 exports.updateUser = async (req, res) => {
     try {
-        const { nickname, avatar, basicInfo } = req.body;
+        const { nickname, avatar, basicInfo, globalSystemPrompt } = req.body;
 
         const updates = {};
         if (nickname !== undefined) updates.nickname = nickname;
         if (avatar !== undefined) updates.avatar = avatar;
         if (basicInfo !== undefined) updates.basicInfo = basicInfo;
+        if (globalSystemPrompt !== undefined) updates.globalSystemPrompt = globalSystemPrompt;
         updates.updatedAt = Date.now();
 
         const user = await User.findByIdAndUpdate(
