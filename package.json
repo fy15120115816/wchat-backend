@@ -1,23 +1,18 @@
 {
-    "name": "wechat-clone-backend",
+    "name": "xiao-wechat",
     "version": "1.0.0",
-    "description": "微信克隆版后端服务",
-    "main": "src/app.js",
+    "description": "小微信 - AI Chat 应用",
     "scripts": {
-        "start": "node src/app.js",
-        "dev": "nodemon src/app.js"
+        "dev:frontend": "cd frontend && npm run dev",
+        "dev:backend": "cd backend && npm run dev",
+        "build:frontend": "cd frontend && npm run build",
+        "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install"
     },
-    "dependencies": {
-        "bcryptjs": "^2.4.3",
-        "cors": "^2.8.5",
-        "dotenv": "^16.3.1",
-        "express": "^4.18.2",
-        "jsonwebtoken": "^9.0.2",
-        "mongoose": "^7.5.0",
-        "socket.io": "^4.7.2",
-        "web-push": "^3.6.7"
-    },
-    "devDependencies": {
-        "nodemon": "^3.0.1"
-    }
+    "keywords": [
+        "wechat",
+        "ai",
+        "chat"
+    ],
+    "author": "",
+    "license": "MIT"
 }

@@ -1,24 +1,20 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# 前端
+frontend/node_modules
+frontend/dist
+frontend/.env
+frontend/.env.local
 
-# Dependencies
+# 后端
+backend/node_modules
+backend/.env
+backend/.env.local
+
+# 根目录
 node_modules
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# IDE
+.DS_Store
 .vscode
 .idea
-.DS_Store
-
-# Temporary files
+*.log
 *.tmp
 *.temp
 .cache
