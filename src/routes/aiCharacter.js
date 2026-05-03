@@ -21,4 +21,17 @@ router.delete('/:characterId', authMiddleware, aiCharacterController.deleteChara
 // AI 生成回复
 router.post('/:characterId/reply', authMiddleware, aiCharacterController.generateReply);
 
+// ======== 分段记忆管理 ========
+// 获取角色的分段记忆列表
+router.get('/:characterId/memories', authMiddleware, aiCharacterController.getMemories);
+
+// 添加新的记忆片段
+router.post('/:characterId/memories', authMiddleware, aiCharacterController.addMemory);
+
+// 删除单个记忆片段
+router.delete('/:characterId/memories/:memoryId', authMiddleware, aiCharacterController.deleteMemory);
+
+// 清空角色的所有记忆
+router.delete('/:characterId/memories', authMiddleware, aiCharacterController.clearMemories);
+
 module.exports = router;

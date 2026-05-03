@@ -43,6 +43,15 @@ const aiCharacterSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    // 分段记忆列表
+    memories: {
+        type: [{ 
+            id: String,
+            content: String,
+            createdAt: Date
+        }],
+        default: []
+    },
     createdAt: {
         type: Date,
         default: Date.now

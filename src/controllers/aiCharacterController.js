@@ -244,3 +244,159 @@ exports.generateReply = async (req, res) => {
         });
     }
 };
+
+// ======== 分段记忆管理 API ========
+
+// 获取角色的分段记忆列表
+exports.getMemories = async (req, res) => {
+    try {
+        const { characterId } = req.params;
+        const userId = req.user.userId;
+
+        const character = await AICharacter.findOne({ _id: characterId, userId });
+
+        if (!character) {
+            return res.status(404).json({
+                success: false,
+                message: '角色不存在'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: character.memories || []
+        });
+    } catch (err) {
+        console.error('❌ 获取记忆列表错误:', err);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误',
+            error: err.message
+        });
+    }
+};
+
+// 添加新的记忆片段
+exports.addMemory = async (req, res) => {
+    try {
+        const { characterId } = req.params;
+        const { content } = req.body;
+        const userId = req.user.userId;
+
+        if (!content?.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: '记忆内容不能为空'
+            });
+        }
+
+        const character = await AICharacter.findOne({ _id: characterId, userId });
+
+        if (!character) {
+            return res.status(404).json({
+                success: false,
+                message: '角色不存在'
+            });
+        }
+
+        const newMemory = {
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+            content: content.trim(),
+            createdAt: new Date()
+        };
+
+        character.memories.push(newMemory);
+        await character.save();
+
+        console.log('✅ 添加记忆成功:', { characterId, memoryId: newMemory.id });
+
+        res.status(201).json({
+            success: true,
+            message: '记忆添加成功',
+            data: newMemory
+        });
+    } catch (err) {
+        console.error('❌ 添加记忆错误:', err);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误',
+            error: err.message
+        });
+    }
+};
+
+// 删除单个记忆片段
+exports.deleteMemory = async (req, res) => {
+    try {
+        const { characterId, memoryId } = req.params;
+        const userId = req.user.userId;
+
+        const character = await AICharacter.findOne({ _id: characterId, userId });
+
+        if (!character) {
+            return res.status(404).json({
+                success: false,
+                message: '角色不存在'
+            });
+        }
+
+        const memoryIndex = character.memories.findIndex(m => m.id === memoryId);
+        if (memoryIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                message: '记忆不存在'
+            });
+        }
+
+        character.memories.splice(memoryIndex, 1);
+        await character.save();
+
+        console.log('✅ 删除记忆成功:', { characterId, memoryId });
+
+        res.status(200).json({
+            success: true,
+            message: '记忆已删除'
+        });
+    } catch (err) {
+        console.error('❌ 删除记忆错误:', err);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误',
+            error: err.message
+        });
+    }
+};
+
+// 清空角色的所有记忆
+exports.clearMemories = async (req, res) => {
+    try {
+        const { characterId } = req.params;
+        const userId = req.user.userId;
+
+        const character = await AICharacter.findOne({ _id: characterId, userId });
+
+        if (!character) {
+            return res.status(404).json({
+                success: false,
+                message: '角色不存在'
+            });
+        }
+
+        character.memories = [];
+        await character.save();
+
+        console.log('✅ 清空记忆成功:', { characterId });
+
+        res.status(200).json({
+            success: true,
+            message: '所有记忆已清空'
+        });
+    } catch (err) {
+        console.error('❌ 清空记忆错误:', err);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误',
+            error: err.message
+        });
+    }
+};
