@@ -4,6 +4,7 @@ const chatController = require('../controllers/chatController');
 const authMiddleware = require('../middleware/auth');
 
 // 按句子边界分割消息（与前端 splitReply 一致）
+
 function splitReply(content, maxChunks) {
     if (!content) return [];
 
@@ -163,21 +164,13 @@ router.post('/proxy', async (req, res) => {
 
                             // 更新聊天的最后消息
                             if (lastAiMessage) {
-                                await Chat.findByIdAndUpdate(chatId, {
+                                await Chat.findByIdAndUpdate(chat._id, {
                                     lastMessage: lastAiMessage._id,
                                     lastMessageAt: Date.now(),
                                     updatedAt: Date.now()
                                 });
+                                console.log('✅ 聊天记录已更新');
                             }
-                            console.log('✅ 聊天记录已更新');
-
-                            // 更新聊天的最后消息
-                            await Chat.findByIdAndUpdate(chatId, {
-                                lastMessage: aiMessage._id,
-                                lastMessageAt: Date.now(),
-                                updatedAt: Date.now()
-                            });
-                            console.log('✅ 聊天记录已更新');
 
                             // 发送推送通知
                             console.log('🔍 senderId:', senderId);
@@ -192,7 +185,7 @@ router.post('/proxy', async (req, res) => {
                                     const payload = {
                                         title: 'AI助手',
                                         body: aiReply.slice(0, 50),
-                                        url: `/chat/${chatId}`
+                                        url: `/chat/${chat._id}`
                                     };
                                     console.log('📤 准备发送推送通知');
                                     const result = await sendPushNotification(user.pushSubscription, payload);
@@ -208,7 +201,7 @@ router.post('/proxy', async (req, res) => {
                                         }
                                     }
                                 } else {
-                                    console.log('❌ 用户没有推送订阅，不发送推送通知');
+                                    console.log('❌ 用户不存在或没有推送订阅，不发送推送通知');
                                 }
                             }
                         }
