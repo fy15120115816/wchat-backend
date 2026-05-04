@@ -397,6 +397,20 @@ async function processAIReply(chatId, senderId, content) {
             .sort({ createdAt: 1 })
             .populate('senderId', 'username');
 
+        // 检查是否存在用户消息（排除AI消息）
+        const userMessages = messages.filter(msg => 
+            !msg.senderId.username?.startsWith('ai-')
+        );
+        if (userMessages.length === 0) {
+            console.log('❌ 没有用户消息，不生成AI回复');
+            io.emit('typing', {
+                chatId,
+                userId: aiParticipant,
+                typing: false
+            });
+            return;
+        }
+
         const history = messages.map(msg => ({
             role: msg.senderId.username?.startsWith('ai-') ? 'assistant' : 'user',
             content: msg.content
