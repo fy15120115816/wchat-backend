@@ -480,9 +480,11 @@ async function processAIReply(chatId, senderId, content) {
         let lastAiMessage = null;
         for (const chunk of aiReplyChunks) {
             // 在保存前再次检查是否存在用户消息（防止清空聊天记录后仍保存回复）
-            const currentUserMessages = await Message.find({
-                chatId,
-                senderId: { $nin: [aiParticipant] }
+            // 使用字符串比较，确保正确匹配
+            const currentMessages = await Message.find({ chatId });
+            const currentUserMessages = currentMessages.filter(msg => {
+                const senderIdStr = msg.senderId.toString();
+                return !senderIdStr.startsWith('ai-');
             });
             
             if (currentUserMessages.length === 0) {
