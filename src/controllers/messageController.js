@@ -479,6 +479,22 @@ async function processAIReply(chatId, senderId, content) {
         // 创建多条AI回复消息
         let lastAiMessage = null;
         for (const chunk of aiReplyChunks) {
+            // 在保存前再次检查是否存在用户消息（防止清空聊天记录后仍保存回复）
+            const currentUserMessages = await Message.find({
+                chatId,
+                senderId: { $nin: [aiParticipant] }
+            });
+            
+            if (currentUserMessages.length === 0) {
+                console.log('❌ 用户消息已被清空，不保存AI回复');
+                io.emit('typing', {
+                    chatId,
+                    userId: aiParticipant,
+                    typing: false
+                });
+                return;
+            }
+            
             const aiMessage = new Message({
                 chatId,
                 senderId: aiParticipant,
