@@ -247,8 +247,8 @@ exports.generateReply = async (req, res) => {
 
 // ======== 分段记忆管理 API ========
 
-// 获取角色的分段记忆列表
-exports.getMemories = async (req, res) => {
+// 获取角色的所有记忆（三种类型）
+exports.getAllMemories = async (req, res) => {
     try {
         const { characterId } = req.params;
         const userId = req.user.userId;
@@ -264,7 +264,11 @@ exports.getMemories = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            data: character.memories || []
+            data: {
+                shortTerm: character.shortTermMemories || [],
+                longTerm: character.longTermMemories || [],
+                permanent: character.permanentMemories || []
+            }
         });
     } catch (err) {
         console.error('❌ 获取记忆列表错误:', err);
@@ -276,11 +280,215 @@ exports.getMemories = async (req, res) => {
     }
 };
 
-// 添加新的记忆片段
-exports.addMemory = async (req, res) => {
+// 获取角色的短期记忆列表
+exports.getShortTermMemories = async (req, res) => {
     try {
         const { characterId } = req.params;
-        const { content } = req.body;
+        const userId = req.user.userId;
+
+        const character = await AICharacter.findOne({ _id: characterId, userId });
+
+        if (!character) {
+            return res.status(404).json({
+                success: false,
+                message: '角色不存在'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: character.shortTermMemories || []
+        });
+    } catch (err) {
+        console.error('❌ 获取短期记忆列表错误:', err);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误',
+            error: err.message
+        });
+    }
+};
+
+// 添加短期记忆（每条20字，最多15条，按序号排列）
+exports.addShortTermMemory = async (req, res) => {
+    try {
+        const { characterId } = req.params;
+        const { content, seq } = req.body;
+        const userId = req.user.userId;
+
+        if (!content?.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: '记忆内容不能为空'
+            });
+        }
+
+        const character = await AICharacter.findOne({ _id: characterId, userId });
+
+        if (!character) {
+            return res.status(404).json({
+                success: false,
+                message: '角色不存在'
+            });
+        }
+
+        // 短期记忆限制15条
+        const memories = character.shortTermMemories || [];
+        if (memories.length >= 15) {
+            return res.status(400).json({
+                success: false,
+                message: '短期记忆已达上限15条'
+            });
+        }
+
+        const newMemory = {
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+            seq: seq || (memories.length + 1),
+            content: content.trim(),
+            createdAt: new Date()
+        };
+
+        character.shortTermMemories.push(newMemory);
+        await character.save();
+
+        console.log('✅ 添加短期记忆成功:', { characterId, memoryId: newMemory.id, seq: newMemory.seq });
+
+        res.status(201).json({
+            success: true,
+            message: '短期记忆添加成功',
+            data: newMemory
+        });
+    } catch (err) {
+        console.error('❌ 添加短期记忆错误:', err);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误',
+            error: err.message
+        });
+    }
+};
+
+// 获取角色的长期记忆列表
+exports.getLongTermMemories = async (req, res) => {
+    try {
+        const { characterId } = req.params;
+        const userId = req.user.userId;
+
+        const character = await AICharacter.findOne({ _id: characterId, userId });
+
+        if (!character) {
+            return res.status(404).json({
+                success: false,
+                message: '角色不存在'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: character.longTermMemories || []
+        });
+    } catch (err) {
+        console.error('❌ 获取长期记忆列表错误:', err);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误',
+            error: err.message
+        });
+    }
+};
+
+// 添加长期记忆（由15条短期记忆总结成350字+，最多10条，超限开新卷宗）
+exports.addLongTermMemory = async (req, res) => {
+    try {
+        const { characterId } = req.params;
+        const { content, shortMemoryIds } = req.body;
+        const userId = req.user.userId;
+
+        if (!content?.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: '记忆内容不能为空'
+            });
+        }
+
+        const character = await AICharacter.findOne({ _id: characterId, userId });
+
+        if (!character) {
+            return res.status(404).json({
+                success: false,
+                message: '角色不存在'
+            });
+        }
+
+        // 计算新卷宗号
+        const currentVolumes = character.longTermMemories || [];
+        const maxVolume = currentVolumes.length > 0 
+            ? Math.max(...currentVolumes.map(m => m.volume || 1)) 
+            : 0;
+        const newVolume = currentVolumes.length >= 10 ? maxVolume + 1 : (maxVolume || 1);
+
+        const newMemory = {
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+            volume: newVolume,
+            content: content.trim(),
+            shortMemoryIds: shortMemoryIds || [],
+            createdAt: new Date()
+        };
+
+        character.longTermMemories.push(newMemory);
+        await character.save();
+
+        console.log('✅ 添加长期记忆成功:', { characterId, memoryId: newMemory.id, volume: newVolume });
+
+        res.status(201).json({
+            success: true,
+            message: '长期记忆添加成功',
+            data: newMemory
+        });
+    } catch (err) {
+        console.error('❌ 添加长期记忆错误:', err);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误',
+            error: err.message
+        });
+    }
+};
+
+// 获取角色的永久记忆列表
+exports.getPermanentMemories = async (req, res) => {
+    try {
+        const { characterId } = req.params;
+        const userId = req.user.userId;
+
+        const character = await AICharacter.findOne({ _id: characterId, userId });
+
+        if (!character) {
+            return res.status(404).json({
+                success: false,
+                message: '角色不存在'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: character.permanentMemories || []
+        });
+    } catch (err) {
+        console.error('❌ 获取永久记忆列表错误:', err);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误',
+            error: err.message
+        });
+    }
+};
+
+// 添加永久记忆（核心记忆）
+exports.addPermanentMemory = async (req, res) => {
+    try {
+        const { characterId } = req.params;
+        const { content, eventType } = req.body;
         const userId = req.user.userId;
 
         if (!content?.trim()) {
@@ -302,21 +510,22 @@ exports.addMemory = async (req, res) => {
         const newMemory = {
             id: Date.now().toString(36) + Math.random().toString(36).slice(2),
             content: content.trim(),
+            eventType: eventType || 'general',
             createdAt: new Date()
         };
 
-        character.memories.push(newMemory);
+        character.permanentMemories.push(newMemory);
         await character.save();
 
-        console.log('✅ 添加记忆成功:', { characterId, memoryId: newMemory.id });
+        console.log('✅ 添加永久记忆成功:', { characterId, memoryId: newMemory.id, eventType });
 
         res.status(201).json({
             success: true,
-            message: '记忆添加成功',
+            message: '永久记忆添加成功',
             data: newMemory
         });
     } catch (err) {
-        console.error('❌ 添加记忆错误:', err);
+        console.error('❌ 添加永久记忆错误:', err);
         res.status(500).json({
             success: false,
             message: '服务器错误',
@@ -325,10 +534,11 @@ exports.addMemory = async (req, res) => {
     }
 };
 
-// 删除单个记忆片段
+// 删除记忆（通用，支持三种类型）
 exports.deleteMemory = async (req, res) => {
     try {
         const { characterId, memoryId } = req.params;
+        const { type } = req.query; // shortTerm, longTerm, permanent
         const userId = req.user.userId;
 
         const character = await AICharacter.findOne({ _id: characterId, userId });
@@ -340,7 +550,24 @@ exports.deleteMemory = async (req, res) => {
             });
         }
 
-        const memoryIndex = character.memories.findIndex(m => m.id === memoryId);
+        let memories;
+        let memoryKey;
+        switch (type) {
+            case 'longTerm':
+                memories = character.longTermMemories;
+                memoryKey = 'longTermMemories';
+                break;
+            case 'permanent':
+                memories = character.permanentMemories;
+                memoryKey = 'permanentMemories';
+                break;
+            case 'shortTerm':
+            default:
+                memories = character.shortTermMemories;
+                memoryKey = 'shortTermMemories';
+        }
+
+        const memoryIndex = memories.findIndex(m => m.id === memoryId);
         if (memoryIndex === -1) {
             return res.status(404).json({
                 success: false,
@@ -348,10 +575,10 @@ exports.deleteMemory = async (req, res) => {
             });
         }
 
-        character.memories.splice(memoryIndex, 1);
+        memories.splice(memoryIndex, 1);
         await character.save();
 
-        console.log('✅ 删除记忆成功:', { characterId, memoryId });
+        console.log('✅ 删除记忆成功:', { characterId, memoryId, type: memoryKey });
 
         res.status(200).json({
             success: true,
@@ -371,6 +598,7 @@ exports.deleteMemory = async (req, res) => {
 exports.clearMemories = async (req, res) => {
     try {
         const { characterId } = req.params;
+        const { type } = req.query; // shortTerm, longTerm, permanent, all
         const userId = req.user.userId;
 
         const character = await AICharacter.findOne({ _id: characterId, userId });
@@ -382,14 +610,25 @@ exports.clearMemories = async (req, res) => {
             });
         }
 
-        character.memories = [];
+        if (type === 'all' || !type) {
+            character.shortTermMemories = [];
+            character.longTermMemories = [];
+            character.permanentMemories = [];
+        } else if (type === 'longTerm') {
+            character.longTermMemories = [];
+        } else if (type === 'permanent') {
+            character.permanentMemories = [];
+        } else {
+            character.shortTermMemories = [];
+        }
+
         await character.save();
 
-        console.log('✅ 清空记忆成功:', { characterId });
+        console.log('✅ 清空记忆成功:', { characterId, type: type || 'all' });
 
         res.status(200).json({
             success: true,
-            message: '所有记忆已清空'
+            message: '记忆已清空'
         });
     } catch (err) {
         console.error('❌ 清空记忆错误:', err);

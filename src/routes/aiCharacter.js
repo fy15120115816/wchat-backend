@@ -22,16 +22,31 @@ router.delete('/:characterId', authMiddleware, aiCharacterController.deleteChara
 router.post('/:characterId/reply', authMiddleware, aiCharacterController.generateReply);
 
 // ======== 分段记忆管理 ========
-// 获取角色的分段记忆列表
-router.get('/:characterId/memories', authMiddleware, aiCharacterController.getMemories);
+// 获取角色的所有记忆（三种类型）
+router.get('/:characterId/memories', authMiddleware, aiCharacterController.getAllMemories);
 
-// 添加新的记忆片段
-router.post('/:characterId/memories', authMiddleware, aiCharacterController.addMemory);
+// 获取角色的短期记忆列表
+router.get('/:characterId/memories/short-term', authMiddleware, aiCharacterController.getShortTermMemories);
 
-// 删除单个记忆片段
+// 添加短期记忆（每条20字，最多15条）
+router.post('/:characterId/memories/short-term', authMiddleware, aiCharacterController.addShortTermMemory);
+
+// 获取角色的长期记忆列表
+router.get('/:characterId/memories/long-term', authMiddleware, aiCharacterController.getLongTermMemories);
+
+// 添加长期记忆（由15条短期记忆总结成350字+）
+router.post('/:characterId/memories/long-term', authMiddleware, aiCharacterController.addLongTermMemory);
+
+// 获取角色的永久记忆列表
+router.get('/:characterId/memories/permanent', authMiddleware, aiCharacterController.getPermanentMemories);
+
+// 添加永久记忆（核心记忆）
+router.post('/:characterId/memories/permanent', authMiddleware, aiCharacterController.addPermanentMemory);
+
+// 删除记忆（通用，支持三种类型）
 router.delete('/:characterId/memories/:memoryId', authMiddleware, aiCharacterController.deleteMemory);
 
-// 清空角色的所有记忆
+// 清空角色的记忆（可指定类型）
 router.delete('/:characterId/memories', authMiddleware, aiCharacterController.clearMemories);
 
 module.exports = router;
