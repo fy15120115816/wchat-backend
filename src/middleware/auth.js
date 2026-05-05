@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 
 const authMiddleware = (req, res, next) => {
     try {
@@ -16,6 +17,15 @@ const authMiddleware = (req, res, next) => {
 
         // 验证 token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        // 验证 userId 必须是有效的 MongoDB ObjectId（防止旧 token 或错误 token）
+        if (!decoded.userId || !mongoose.Types.ObjectId.isValid(decoded.userId)) {
+            console.error('❌ Token 中的 userId 无效:', decoded.userId);
+            return res.status(401).json({
+                success: false,
+                message: 'Token 无效，请重新登录'
+            });
+        }
 
         // 将用户信息添加到请求对象
         req.user = {

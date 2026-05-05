@@ -13,7 +13,7 @@ exports.getConfigs = async (req, res) => {
 
 exports.createConfig = async (req, res) => {
     try {
-        const { id, name, apiUrl, apiKey, model, isDefault } = req.body;
+        const { id, name, apiUrl, apiKey, model, isDefault, type } = req.body;
         const userId = req.user.userId;
 
         if (isDefault) {
@@ -27,6 +27,7 @@ exports.createConfig = async (req, res) => {
             apiKey,
             model: model || '',
             isDefault: isDefault !== false,
+            type: type || 'global',
             userId
         });
 
@@ -41,7 +42,7 @@ exports.createConfig = async (req, res) => {
 exports.updateConfig = async (req, res) => {
     try {
         const { configId } = req.params;
-        const { name, apiUrl, apiKey, model, isDefault } = req.body;
+        const { name, apiUrl, apiKey, model, isDefault, type } = req.body;
         const userId = req.user.userId;
 
         if (isDefault) {
@@ -50,7 +51,7 @@ exports.updateConfig = async (req, res) => {
 
         const config = await ApiConfig.findOneAndUpdate(
             { _id: configId, userId },
-            { name, apiUrl, apiKey, model, isDefault, updatedAt: Date.now() },
+            { name, apiUrl, apiKey, model, isDefault, type, updatedAt: Date.now() },
             { new: true }
         );
 

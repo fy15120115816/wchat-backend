@@ -4,7 +4,10 @@ const messageController = require('../controllers/messageController');
 const authMiddleware = require('../middleware/auth');
 
 // 发送消息
-router.post('/', authMiddleware, messageController.sendMessage);
+router.post('/', authMiddleware, (req, res, next) => {
+    console.log('🚪 消息路由入口:', req.method, req.path, 'body:', JSON.stringify(req.body).slice(0, 100));
+    next();
+}, messageController.sendMessage);
 
 // 获取聊天消息
 router.get('/:chatId', authMiddleware, messageController.getMessages);

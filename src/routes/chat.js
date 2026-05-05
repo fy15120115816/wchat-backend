@@ -123,9 +123,10 @@ router.post('/proxy', async (req, res) => {
                     // 如果 chatId 是 ai-xxx 格式，通过参与者查找
                     if (chatId.startsWith('ai-')) {
                         const aiId = chatId.replace('ai-', '');
+                        // 使用 ai-${aiId} 作为参与者ID，与创建聊天时一致
                         chat = await Chat.findOne({
                             participants: {
-                                $all: [senderId, aiId]
+                                $all: [senderId, `ai-${aiId}`]
                             }
                         });
                     } else {
