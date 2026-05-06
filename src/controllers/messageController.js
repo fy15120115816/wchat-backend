@@ -143,12 +143,35 @@ exports.getMessages = async (req, res) => {
         const skip = (page - 1) * limit;
 
         // 获取消息（按时间倒序）
-        const messages = await Message.find({ chatId })
-            .populate('senderId', 'username avatar')
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit)
-            .lean();
+        // 使用aggregate保留原始senderId，同时尝试populate用户信息
+        const messages = await Message.aggregate([
+            { $match: { chatId } },
+            { $sort: { createdAt: -1 } },
+            { $skip: skip },
+            { $limit: limit },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'senderId',
+                    foreignField: '_id',
+                    as: 'senderInfo'
+                }
+            },
+            {
+                $addFields: {
+                    // 保留原始senderId，用于判断是否为AI消息
+                    originalSenderId: { $toString: '$senderId' },
+                    senderInfo: { $arrayElemAt: ['$senderInfo', 0] }
+                }
+            }
+        ]).exec();
+
+        // 转换格式，保持与原有接口兼容
+        const formattedMessages = messages.map(msg => ({
+            ...msg,
+            senderId: msg.senderInfo || msg.originalSenderId,
+            _id: msg._id.toString()
+        }));
 
         // 标记消息为已读
         await Message.updateMany(
@@ -158,7 +181,7 @@ exports.getMessages = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            data: messages.reverse()
+            data: formattedMessages.reverse()
         });
     } catch (err) {
         console.error('获取消息错误:', err);
