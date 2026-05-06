@@ -176,7 +176,8 @@ exports.getMessages = async (req, res) => {
         const formattedMessages = messages.map(msg => {
             let senderIdValue = msg.originalSenderId; // 默认使用原始senderId
             // 如果找到了用户信息，使用用户对象
-            if (msg.senderInfo && Object.keys(msg.senderInfo).length > 0) {
+            // ✅ 但如果是AI消息（senderId以 ai- 开头），不要替换senderId，保持原样
+            if (msg.senderInfo && Object.keys(msg.senderInfo).length > 0 && !msg.originalSenderId.startsWith('ai-')) {
                 senderIdValue = msg.senderInfo;
             }
             return {
