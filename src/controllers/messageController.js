@@ -167,11 +167,18 @@ exports.getMessages = async (req, res) => {
         ]).exec();
 
         // 转换格式，保持与原有接口兼容
-        const formattedMessages = messages.map(msg => ({
-            ...msg,
-            senderId: msg.senderInfo || msg.originalSenderId,
-            _id: msg._id.toString()
-        }));
+        const formattedMessages = messages.map(msg => {
+            let senderIdValue = msg.originalSenderId; // 默认使用原始senderId
+            // 如果找到了用户信息，使用用户对象
+            if (msg.senderInfo && Object.keys(msg.senderInfo).length > 0) {
+                senderIdValue = msg.senderInfo;
+            }
+            return {
+                ...msg,
+                senderId: senderIdValue,
+                _id: msg._id.toString()
+            };
+        });
 
         // 标记消息为已读
         await Message.updateMany(
