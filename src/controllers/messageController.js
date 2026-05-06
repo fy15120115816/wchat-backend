@@ -73,10 +73,16 @@ exports.sendMessage = async (req, res) => {
             console.log('🔍 是否有AI参与者:', hasAIParticipant);
 
             if (hasAIParticipant) {
-                console.log('✅ 检测到AI角色聊天，准备调用processAIReply');
-                processAIReply(chatId, actualSenderId, content).catch(err => {
-                    console.error('❌ processAIReply 抛出异常:', err.message);
-                });
+                // ✅ 检查发送者是否是AI，如果是AI则不触发回复（避免AI回复自己）
+                const isAISender = actualSenderId.toString().startsWith('ai-');
+                if (isAISender) {
+                    console.log('❌ 发送者是AI，跳过processAIReply');
+                } else {
+                    console.log('✅ 检测到AI角色聊天，准备调用processAIReply');
+                    processAIReply(chatId, actualSenderId, content).catch(err => {
+                        console.error('❌ processAIReply 抛出异常:', err.message);
+                    });
+                }
             } else {
                 console.log('❌ 不是AI角色聊天，不调用processAIReply');
                 console.log('   - chat类型:', chat.type);
@@ -299,6 +305,37 @@ exports.deleteAllMessages = async (req, res) => {
         });
     } catch (err) {
         console.error('清空聊天记录错误:', err);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误',
+            error: err.message
+        });
+    }
+};
+
+// 标记消息为已读
+exports.markMessagesAsRead = async (req, res) => {
+    try {
+        const { chatId } = req.params;
+        const userId = req.user.userId;
+
+        // 标记所有未读消息为已读（排除自己发送的消息）
+        await Message.updateMany({
+            chatId,
+            senderId: { $ne: userId },
+            isRead: false
+        }, {
+            isRead: true
+        });
+
+        console.log('✅ 消息已标记为已读:', chatId);
+
+        res.status(200).json({
+            success: true,
+            message: '消息已标记为已读'
+        });
+    } catch (err) {
+        console.error('标记消息为已读错误:', err);
         res.status(500).json({
             success: false,
             message: '服务器错误',
@@ -1041,5 +1078,6 @@ module.exports = {
     deleteMessage: exports.deleteMessage,
     deleteAllMessages: exports.deleteAllMessages,
     getUnreadCount: exports.getUnreadCount,
+    markMessagesAsRead: exports.markMessagesAsRead,
     processAIReply
 };

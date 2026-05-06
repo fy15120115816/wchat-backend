@@ -21,4 +21,7 @@ router.delete('/:messageId', authMiddleware, messageController.deleteMessage);
 // 获取未读消息数
 router.get('/:chatId/unread', authMiddleware, messageController.getUnreadCount);
 
+// 标记消息为已读
+router.post('/:chatId/read', authMiddleware, messageController.markMessagesAsRead);
+
 module.exports = router;
