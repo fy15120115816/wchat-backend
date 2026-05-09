@@ -1061,18 +1061,38 @@ async function processAIReply(chatId, senderId, content) {
         // 发送推送通知
         if (user.pushSubscription) {
             try {
+                console.log('🔔 准备发送推送通知给用户:', userId);
+                console.log('🔔 推送订阅:', JSON.stringify(user.pushSubscription).slice(0, 100));
+
                 const payload = {
                     title: aiCharacter.name || 'AI助手',
                     body: aiReply.slice(0, 50),
                     url: `/chat/${chatId}`
                 };
-                await sendPushNotification(user.pushSubscription, payload);
+
+                console.log('🔔 推送内容:', payload);
+                const result = await sendPushNotification(user.pushSubscription, payload);
+
+                if (result.success) {
+                    console.log('✅ 推送通知发送成功');
+                } else {
+                    console.log('❌ 推送通知发送失败:', result);
+                    if (result.expired) {
+                        console.log('⚠️ 推送订阅已过期，移除订阅');
+                        user.pushSubscription = null;
+                        await user.save();
+                    }
+                }
             } catch (pushError) {
+                console.error('❌ 发送推送通知时发生异常:', pushError.message, pushError.stack);
                 if (pushError.statusCode === 410) {
+                    console.log('⚠️ 推送订阅已过期(statusCode=410)，移除订阅');
                     user.pushSubscription = null;
                     await user.save();
                 }
             }
+        } else {
+            console.log('ℹ️ 用户未配置推送订阅，跳过推送通知');
         }
 
     } catch (error) {

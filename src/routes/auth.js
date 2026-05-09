@@ -48,11 +48,52 @@ router.post('/test-notification', authMiddleware, async (req, res) => {
             return res.status(400).json({ success: false, message: '用户未开启通知，请先在设置中开启AI通知' });
         }
         
+        // 使用统一的推送服务
+        const { sendPushNotification } = require('../services/pushService');
+        
+        const payload = {
+            title: '测试通知',
+            body: '这是一条测试推送通知',
+            url: '/'
+        };
+        
+        const result = await sendPushNotification(user.pushSubscription, payload);
+        
+        if (result.success) {
+            res.json({ success: true, message: '测试通知发送成功' });
+        } else {
+            if (result.expired) {
+                user.pushSubscription = null;
+                await user.save();
+                res.status(400).json({ success: false, message: '推送订阅已过期，请重新开启通知' });
+            } else {
+                res.status(500).json({ success: false, message: '发送通知失败' });
+            }
+        }
+    } catch (error) {
+        console.error('❌ 发送测试通知失败:', error);
+        res.status(500).json({ success: false, message: '发送通知失败: ' + error.message });
+    }
+});
+
+// 原有代码继续（如果有更多内容）
+router.post('/test-notification-old', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.userId);
+        
+        if (!user) {
+            return res.status(404).json({ success: false, message: '用户不存在' });
+        }
+        
+        if (!user.pushSubscription) {
+            return res.status(400).json({ success: false, message: '用户未开启通知，请先在设置中开启AI通知' });
+        }
+        
         const webpush = require('web-push');
         webpush.setVapidDetails(
             'mailto:admin@example.com',
-            process.env.VAPID_PUBLIC_KEY || 'BO8Hqu9fbcifxKlUqnI_oz_Q5b0Lw5mzdgu99_vxJvixgF6lnuR9c0b7PFqEzkmG33HQxcUXbHlhEuD5BKmDlVs',
-            process.env.VAPID_PRIVATE_KEY || 'QpTE7--OnW9vDaa9RYg4Emu3Q44MBSP9xSBjmlYSFlg'
+            process.env.VAPID_PUBLIC_KEY || 'BGxXA4YCH74ZuMslvhQdcSDBpiJwqIa2cSSEidlEJFkCmmCCrIb5gvAY1HlZbka1btjx3E_MkXcQ7SSKT_O9vfY',
+            process.env.VAPID_PRIVATE_KEY || 'XNCgjOzv1EPCLrpc8suxhwZSR88wDFlztQE0HSqLLFY'
         );
         
         const payload = JSON.stringify({

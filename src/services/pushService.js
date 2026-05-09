@@ -10,17 +10,30 @@ webpush.setVapidDetails(
 
 exports.sendPushNotification = async (subscription, payload) => {
     try {
-        await webpush.sendNotification(subscription, JSON.stringify(payload));
-        console.log('✅ 推送通知发送成功');
+        console.log('📤 开始发送推送通知...');
+        console.log('📤 订阅对象:', JSON.stringify(subscription).slice(0, 150));
+        console.log('📤 推送载荷:', payload);
+        
+        const result = await webpush.sendNotification(subscription, JSON.stringify(payload));
+        console.log('✅ 推送通知发送成功, 结果:', result);
+        return { success: true };
     } catch (error) {
         console.error('❌ 推送通知发送失败:', error.message);
+        console.error('❌ 错误详情:', error);
+        
         // 如果订阅过期，移除订阅
         if (error.statusCode === 410) {
+            console.log('❌ 订阅已过期 (statusCode: 410)');
             return { success: false, expired: true };
         }
+        
+        // 其他错误
+        if (error.statusCode) {
+            console.log('❌ HTTP状态码:', error.statusCode);
+        }
+        
         return { success: false, expired: false };
     }
-    return { success: true };
 };
 
 // 生成 VAPID 密钥（运行一次即可）
