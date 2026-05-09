@@ -748,6 +748,11 @@ async function processAIReply(chatId, senderId, content) {
         const apiKey = apiConfig.apiKey;
         const model = apiConfig.model || 'gpt-3.5-turbo';
 
+        console.log('🔌 API配置详情:');
+        console.log('   - apiUrl:', apiUrl);
+        console.log('   - apiKey:', apiKey ? `[已配置，长度: ${apiKey.length}]` : '未配置');
+        console.log('   - model:', model);
+
         const requestBody = {
             model: model,
             messages: [...systemMessages, ...history],
