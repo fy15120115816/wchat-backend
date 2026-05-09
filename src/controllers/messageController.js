@@ -582,7 +582,7 @@ async function processAIReply(chatId, senderId, content) {
         }
 
         // 2. 如果没有对应类型的配置，使用用户选择的全局配置
-        if (!apiConfig && userSelections.globalApiConfigId) {
+        if (!apiConfig && userSelections?.globalApiConfigId) {
             apiConfig = await ApiConfig.findById(userSelections.globalApiConfigId);
             console.log('🔄 未找到对应类型配置，使用用户选择的全局配置:', userSelections.globalApiConfigId, '结果:', apiConfig ? '找到' : '未找到');
         }
