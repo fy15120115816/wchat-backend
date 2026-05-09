@@ -1072,15 +1072,20 @@ async function processAIReply(chatId, senderId, content) {
 
                 console.log('🔔 推送内容:', payload);
                 const result = await sendPushNotification(user.pushSubscription, payload);
+                console.log('🔔 推送结果:', JSON.stringify(result));
 
                 if (result.success) {
                     console.log('✅ 推送通知发送成功');
                 } else {
                     console.log('❌ 推送通知发送失败:', result);
+                    console.log('🔍 检查是否需要移除订阅: expired=', result.expired);
                     if (result.expired) {
-                        console.log('⚠️ 推送订阅已过期，移除订阅');
+                        console.log('⚠️ 推送订阅已过期或密钥不匹配，移除订阅');
                         user.pushSubscription = null;
                         await user.save();
+                        console.log('✅ 订阅已成功移除');
+                    } else {
+                        console.log('ℹ️ 订阅未过期，不移除');
                     }
                 }
             } catch (pushError) {
