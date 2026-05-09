@@ -1078,23 +1078,19 @@ async function processAIReply(chatId, senderId, content) {
                     console.log('✅ 推送通知发送成功');
                 } else {
                     console.log('❌ 推送通知发送失败:', result);
-                    console.log('🔍 检查是否需要移除订阅: expired=', result.expired);
-                    if (result.expired) {
-                        console.log('⚠️ 推送订阅已过期或密钥不匹配，移除订阅');
-                        user.pushSubscription = null;
-                        await user.save();
-                        console.log('✅ 订阅已成功移除');
-                    } else {
-                        console.log('ℹ️ 订阅未过期，不移除');
-                    }
+                    // 任何推送失败都移除订阅，让前端重新注册
+                    console.log('⚠️ 推送失败，移除订阅以允许重新注册');
+                    user.pushSubscription = null;
+                    await user.save();
+                    console.log('✅ 订阅已成功移除');
                 }
             } catch (pushError) {
                 console.error('❌ 发送推送通知时发生异常:', pushError.message, pushError.stack);
-                if (pushError.statusCode === 410) {
-                    console.log('⚠️ 推送订阅已过期(statusCode=410)，移除订阅');
-                    user.pushSubscription = null;
-                    await user.save();
-                }
+                // 任何异常都移除订阅，让前端重新注册
+                console.log('⚠️ 推送异常，移除订阅以允许重新注册');
+                user.pushSubscription = null;
+                await user.save();
+                console.log('✅ 订阅已成功移除');
             }
         } else {
             console.log('ℹ️ 用户未配置推送订阅，跳过推送通知');
