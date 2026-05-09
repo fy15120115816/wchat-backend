@@ -42,7 +42,7 @@ const userSchema = new mongoose.Schema({
     globalApiConfigId: { type: String, default: null },   // 全局配置
     textApiConfigId: { type: String, default: null },    // 文字消息配置
     imageApiConfigId: { type: String, default: null },   // 图片消息配置
-    pushSubscription: { type: Object, default: null }, // 推送订阅
+    pushSubscriptions: { type: Array, default: [] }, // 推送订阅（支持多设备）
     createdAt: {
         type: Date,
         default: Date.now

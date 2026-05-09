@@ -112,22 +112,31 @@ exports.sendMessage = async (req, res) => {
                             continue;
                         }
                         const participant = await User.findById(participantId);
-                        if (participant && participant.pushSubscription) {
+                        // 支持多设备订阅
+                        const subscriptions = participant?.pushSubscriptions || [];
+                        if (participant && subscriptions.length > 0) {
                             try {
                                 const payload = {
                                     title: participant.nickname || participant.username || '新消息',
                                     body: content.slice(0, 50),
                                     url: `/chat/${chatId}`
                                 };
-                                await sendPushNotification(participant.pushSubscription, payload);
+                                // 向所有订阅发送通知
+                                for (const sub of subscriptions) {
+                                    const result = await sendPushNotification(sub, payload);
+                                    if (!result.success) {
+                                        // 如果订阅失效，移除订阅
+                                        participant.pushSubscriptions = participant.pushSubscriptions.filter(
+                                            s => s.endpoint !== sub.endpoint
+                                        );
+                                    }
+                                }
+                                if (participant.pushSubscriptions.length !== subscriptions.length) {
+                                    await participant.save();
+                                }
                                 console.log('✅ 推送通知已发送给:', participant.username);
                             } catch (pushError) {
                                 console.error('❌ 推送通知发送失败:', pushError.message);
-                                // 如果订阅过期，移除订阅
-                                if (pushError.statusCode === 410) {
-                                    participant.pushSubscription = null;
-                                    await participant.save();
-                                }
                             }
                         }
                     }
@@ -1071,17 +1080,19 @@ async function processAIReply(chatId, senderId, content) {
             });
         }
 
-        // 发送推送通知
+        // 发送推送通知（支持多设备）
         console.log('📨 开始发送推送通知流程');
         console.log('📨 user是否存在:', !!user);
-        console.log('📨 user.pushSubscription是否存在:', user?.pushSubscription ? '存在' : '不存在');
+
+        // 支持多设备订阅
+        const subscriptions = user?.pushSubscriptions || [];
+        console.log('📨 用户订阅数量:', subscriptions.length);
 
         if (!user) {
             console.log('❌ user未定义，跳过推送通知');
-        } else if (user.pushSubscription) {
+        } else if (subscriptions && subscriptions.length > 0) {
             try {
-                console.log('🔔 准备发送推送通知给用户:', senderId);
-                console.log('🔔 推送订阅:', JSON.stringify(user.pushSubscription).slice(0, 100));
+                console.log('🔔 准备向', subscriptions.length, '个设备发送推送通知');
 
                 const payload = {
                     title: aiCharacter.name || 'AI助手',
@@ -1090,28 +1101,36 @@ async function processAIReply(chatId, senderId, content) {
                 };
 
                 console.log('🔔 推送内容:', payload);
-                const result = await sendPushNotification(user.pushSubscription, payload);
-                console.log('🔔 推送结果:', JSON.stringify(result));
 
-                if (result.success) {
-                    console.log('✅ 推送通知发送成功');
-                } else {
-                    console.log('❌ 推送通知发送失败:', result);
-                    console.log('❌ result.success:', result.success);
-                    console.log('❌ result.expired:', result.expired);
-                    // 任何推送失败都移除订阅，让前端重新注册
-                    console.log('⚠️ 推送失败，移除订阅以允许重新注册');
-                    user.pushSubscription = null;
-                    await user.save();
-                    console.log('✅ 订阅已成功移除');
+                // 向所有订阅发送通知
+                let successCount = 0;
+                let failedCount = 0;
+
+                for (const sub of subscriptions) {
+                    console.log('🔔 向端点发送:', sub.endpoint?.slice(0, 50));
+                    const result = await sendPushNotification(sub, payload);
+                    console.log('🔔 推送结果:', JSON.stringify(result));
+
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        failedCount++;
+                        // 移除失败的订阅
+                        user.pushSubscriptions = user.pushSubscriptions.filter(
+                            s => s.endpoint !== sub.endpoint
+                        );
+                    }
                 }
+
+                if (failedCount > 0) {
+                    await user.save();
+                    console.log('⚠️ 已移除', failedCount, '个失效订阅');
+                }
+
+                console.log(`✅ 推送通知发送完成: ${successCount}成功, ${failedCount}失败`);
+
             } catch (pushError) {
                 console.error('❌ 发送推送通知时发生异常:', pushError.message, pushError.stack);
-                // 任何异常都移除订阅，让前端重新注册
-                console.log('⚠️ 推送异常，移除订阅以允许重新注册');
-                user.pushSubscription = null;
-                await user.save();
-                console.log('✅ 订阅已成功移除');
             }
         } else {
             console.log('ℹ️ 用户未配置推送订阅，跳过推送通知');

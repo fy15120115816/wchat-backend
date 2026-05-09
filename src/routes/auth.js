@@ -19,14 +19,40 @@ router.put('/user', authMiddleware, authController.updateUser);
 // 修改密码（需要认证）
 router.put('/password', authMiddleware, authController.changePassword);
 
-// 推送订阅（需要认证）
+// 推送订阅（需要认证）- 支持多设备
 router.post('/subscribe', authMiddleware, async (req, res) => {
     try {
         const { subscription } = req.body;
         const userId = req.user.userId;
 
-        await User.findByIdAndUpdate(userId, { pushSubscription: subscription });
-        console.log('✅ 用户推送订阅已更新:', userId);
+        // 查找用户
+        const user = await User.findById(userId);
+        
+        if (!user) {
+            return res.status(404).json({ success: false, message: '用户不存在' });
+        }
+
+        // 如果还没有订阅数组，初始化
+        if (!user.pushSubscriptions) {
+            user.pushSubscriptions = [];
+        }
+
+        // 检查是否已存在相同的订阅（通过endpoint判断）
+        const existingIndex = user.pushSubscriptions.findIndex(
+            sub => sub.endpoint === subscription.endpoint
+        );
+
+        if (existingIndex >= 0) {
+            // 更新现有订阅
+            user.pushSubscriptions[existingIndex] = subscription;
+            console.log('✅ 用户推送订阅已更新:', userId);
+        } else {
+            // 添加新订阅
+            user.pushSubscriptions.push(subscription);
+            console.log('✅ 用户推送订阅已添加（多设备支持）:', userId);
+        }
+
+        await user.save();
 
         res.json({ success: true, message: '订阅成功' });
     } catch (error) {
@@ -35,7 +61,7 @@ router.post('/subscribe', authMiddleware, async (req, res) => {
     }
 });
 
-// 测试推送通知
+// 测试推送通知 - 支持多设备
 router.post('/test-notification', authMiddleware, async (req, res) => {
     try {
         const user = await User.findById(req.user.userId);
@@ -44,9 +70,13 @@ router.post('/test-notification', authMiddleware, async (req, res) => {
             return res.status(404).json({ success: false, message: '用户不存在' });
         }
         
-        if (!user.pushSubscription) {
+        // 检查是否有订阅（支持多设备）
+        const subscriptions = user.pushSubscriptions || [];
+        if (!subscriptions || subscriptions.length === 0) {
             return res.status(400).json({ success: false, message: '用户未开启通知，请先在设置中开启AI通知' });
         }
+        
+        console.log('📨 找到', subscriptions.length, '个推送订阅');
         
         // 使用统一的推送服务
         const { sendPushNotification } = require('../services/pushService');
@@ -57,18 +87,33 @@ router.post('/test-notification', authMiddleware, async (req, res) => {
             url: '/'
         };
         
-        const result = await sendPushNotification(user.pushSubscription, payload);
+        // 向所有订阅发送通知
+        let successCount = 0;
+        let failedCount = 0;
         
-        if (result.success) {
-            res.json({ success: true, message: '测试通知发送成功' });
-        } else {
-            if (result.expired) {
-                user.pushSubscription = null;
-                await user.save();
-                res.status(400).json({ success: false, message: '推送订阅已过期，请重新开启通知' });
+        for (const sub of subscriptions) {
+            const result = await sendPushNotification(sub, payload);
+            
+            if (result.success) {
+                successCount++;
             } else {
-                res.status(500).json({ success: false, message: '发送通知失败' });
+                failedCount++;
+                // 移除失败的订阅
+                user.pushSubscriptions = user.pushSubscriptions.filter(
+                    s => s.endpoint !== sub.endpoint
+                );
             }
+        }
+        
+        if (failedCount > 0) {
+            await user.save();
+            console.log('⚠️ 已移除', failedCount, '个失效订阅');
+        }
+        
+        if (successCount > 0) {
+            res.json({ success: true, message: `测试通知发送成功（${successCount}个设备）` });
+        } else {
+            res.status(500).json({ success: false, message: '所有设备发送失败' });
         }
     } catch (error) {
         console.error('❌ 发送测试通知失败:', error);
