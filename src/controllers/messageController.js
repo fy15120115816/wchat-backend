@@ -1059,9 +1059,11 @@ async function processAIReply(chatId, senderId, content) {
         }
 
         // 发送推送通知
-        if (user.pushSubscription) {
+        if (!user) {
+            console.log('❌ user未定义，跳过推送通知');
+        } else if (user.pushSubscription) {
             try {
-                console.log('🔔 准备发送推送通知给用户:', userId);
+                console.log('🔔 准备发送推送通知给用户:', senderId);
                 console.log('🔔 推送订阅:', JSON.stringify(user.pushSubscription).slice(0, 100));
 
                 const payload = {
