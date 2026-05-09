@@ -1,12 +1,12 @@
 // backend/src/services/pushService.js
 const webpush = require('web-push');
 
-// 配置 VAPID 密钥
-const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || 'BGzFvf8l6peZ1V5nxljJ6cS6SY8mof6fJDLSx6EukkQWDw6kayDdnTDaRm8qZGaQOLLD3Q5Edt6ZUiN4zxnEmM0';
-const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || 'mo4qOwvxmB3T1LUsnYZIMOH1KS9_DKSgYgutNdqBM1I';
+// 配置 VAPID 密钥 - 强制使用代码中的密钥，忽略环境变量（确保与前端一致）
+const VAPID_PUBLIC_KEY = 'BGzFvf8l6peZ1V5nxljJ6cS6SY8mof6fJDLSx6EukkQWDw6kayDdnTDaRm8qZGaQOLLD3Q5Edt6ZUiN4zxnEmM0';
+const VAPID_PRIVATE_KEY = 'mo4qOwvxmB3T1LUsnYZIMOH1KS9_DKSgYgutNdqBM1I';
 
-console.log('🔑 VAPID_PUBLIC_KEY (环境变量):', process.env.VAPID_PUBLIC_KEY || '未设置，使用默认值');
-console.log('🔑 VAPID_PUBLIC_KEY (实际使用):', VAPID_PUBLIC_KEY);
+console.log('🔑 VAPID_PUBLIC_KEY (强制使用代码中的密钥):', VAPID_PUBLIC_KEY);
+console.log('🔑 警告：已忽略环境变量 VAPID_PUBLIC_KEY:', process.env.VAPID_PUBLIC_KEY ? '存在' : '不存在');
 
 webpush.setVapidDetails(
     'mailto:admin@example.com',
