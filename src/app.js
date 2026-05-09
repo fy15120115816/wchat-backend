@@ -88,7 +88,8 @@ io.on('connection', (socket) => {
                 senderId,
                 content,
                 type: type || 'text',
-                image: image || ''
+                image: image || '',
+                isRead: true // 用户发送的消息默认为已读
             });
 
             await message.save();
@@ -116,6 +117,26 @@ io.on('connection', (socket) => {
                     });
                 }
             });
+
+            // 如果是AI角色聊天，触发AI回复
+            if (chat) {
+                const hasAIParticipant = chat.participants && chat.participants.some(p => p.toString().startsWith('ai-'));
+                console.log('🔍 WebSocket检测到AI参与者:', hasAIParticipant);
+                
+                if (hasAIParticipant) {
+                    const isAISender = senderId.toString().startsWith('ai-');
+                    if (!isAISender) {
+                        console.log('✅ WebSocket触发processAIReply');
+                        // 导入processAIReply函数
+                        const messageController = require('./controllers/messageController');
+                        messageController.processAIReply(chatId, senderId, content).catch(err => {
+                            console.error('❌ WebSocket processAIReply 抛出异常:', err.message);
+                        });
+                    } else {
+                        console.log('❌ 发送者是AI，跳过processAIReply');
+                    }
+                }
+            }
 
         } catch (err) {
             console.error('WebSocket 发送消息失败:', err);
