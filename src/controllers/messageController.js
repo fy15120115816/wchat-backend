@@ -12,7 +12,7 @@ exports.sendMessage = async (req, res) => {
         // 如果请求中没有指定senderId，则使用当前登录用户的ID
         const actualSenderId = senderId || req.user.userId;
 
-        console.log('📤 收到消息请求:', { chatId, content: content.slice(0, 20), actualSenderId, senderIdFromBody: senderId });
+        console.log('📤 收到消息请求:', { chatId, content: content.slice(0, 20), actualSenderId, senderIdFromBody: senderId, type: typeof actualSenderId });
 
         // 验证参数
         if (!chatId || !content) {
