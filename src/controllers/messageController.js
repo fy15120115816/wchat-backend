@@ -23,12 +23,14 @@ exports.sendMessage = async (req, res) => {
         }
 
         // 创建消息
+        // ✅ 用户发送的消息默认标记为已读，AI消息默认未读（由模型默认值处理）
         const message = new Message({
             chatId,
             senderId: actualSenderId,
             content,
             type,
-            image
+            image,
+            isRead: true // 用户发送的消息默认为已读
         });
 
         await message.save();
@@ -179,15 +181,8 @@ exports.getMessages = async (req, res) => {
             };
         });
 
-        // 标记消息为已读（只标记用户消息，避免 AI senderId 字段类型不一致导致 CastError）
-        try {
-            await Message.updateMany(
-                { chatId, senderId: { $nin: [req.user.userId, null] }, isRead: false },
-                { isRead: true }
-            );
-        } catch (e) {
-            console.log('⚠️ 标记已读失败（非阻塞）:', e.message);
-        }
+        // ✅ 移除自动标记已读，改为由前端显式调用 markMessagesAsRead 接口
+        // 这样聊天列表页面获取消息时不会自动清除未读状态
 
         res.status(200).json({
             success: true,
@@ -321,12 +316,13 @@ exports.deleteAllMessages = async (req, res) => {
 exports.markMessagesAsRead = async (req, res) => {
     try {
         const { chatId } = req.params;
-        const userId = req.user.userId;
+        // 将 userId 转换为字符串，确保与数据库中的 senderId 类型一致
+        const userIdStr = String(req.user.userId);
 
         // 标记所有未读消息为已读（排除自己发送的消息）
         await Message.updateMany({
             chatId,
-            senderId: { $ne: userId },
+            senderId: { $ne: userIdStr },
             isRead: false
         }, {
             isRead: true
@@ -352,10 +348,12 @@ exports.markMessagesAsRead = async (req, res) => {
 exports.getUnreadCount = async (req, res) => {
     try {
         const { chatId } = req.params;
+        // 将 userId 转换为字符串，确保与数据库中的 senderId 类型一致
+        const userIdStr = String(req.user.userId);
 
         const count = await Message.countDocuments({
             chatId,
-            senderId: { $ne: req.user.userId },
+            senderId: { $ne: userIdStr },
             isRead: false
         });
 
@@ -432,6 +430,10 @@ const processingChats = new Set();
 
 // 处理AI回复（后台异步任务）
 async function processAIReply(chatId, senderId, content) {
+    // ✅ 确保 senderId 是字符串类型，避免数据库查询类型不匹配
+    senderId = senderId.toString();
+    console.log('🔄 processAIReply - senderId:', senderId, 'type:', typeof senderId);
+
     // ✅ 检查聊天是否已被清空
     if (clearedChats.has(chatId)) {
         console.log('❌ 聊天', chatId, '已被清空，跳过AI回复');
@@ -582,25 +584,25 @@ async function processAIReply(chatId, senderId, content) {
         // 2. 如果没有对应类型的配置，使用用户选择的全局配置
         if (!apiConfig && userSelections.globalApiConfigId) {
             apiConfig = await ApiConfig.findById(userSelections.globalApiConfigId);
-            console.log('🔄 未找到对应类型配置，使用用户选择的全局配置:', userSelections.globalApiConfigId);
+            console.log('🔄 未找到对应类型配置，使用用户选择的全局配置:', userSelections.globalApiConfigId, '结果:', apiConfig ? '找到' : '未找到');
         }
 
         // 3. 如果没有用户选择的全局配置，使用type=global配置
         if (!apiConfig) {
             apiConfig = await ApiConfig.findOne({ userId: senderId, type: 'global' });
-            console.log('🔄 未找到用户选择的全局配置，尝试使用type=global配置');
+            console.log('🔄 未找到用户选择的全局配置，尝试使用type=global配置, userId:', senderId, '结果:', apiConfig ? '找到' : '未找到');
         }
 
         // 4. 如果还是没有，使用默认配置
         if (!apiConfig) {
             apiConfig = await ApiConfig.findOne({ userId: senderId, isDefault: true });
-            console.log('🔄 未找到全局配置，尝试使用默认配置');
+            console.log('🔄 未找到全局配置，尝试使用默认配置, userId:', senderId, '结果:', apiConfig ? '找到' : '未找到');
         }
 
         // 5. 如果都没有，使用任意配置
         if (!apiConfig) {
             apiConfig = await ApiConfig.findOne({ userId: senderId });
-            console.log('🔄 未找到默认配置，使用任意配置');
+            console.log('🔄 未找到默认配置，使用任意配置, userId:', senderId, '结果:', apiConfig ? '找到' : '未找到');
         }
 
         if (!apiConfig) {
@@ -1030,12 +1032,13 @@ async function processAIReply(chatId, senderId, content) {
                 chatId,
                 senderId: aiParticipant,
                 content: chunk,
-                type: 'text'
+                type: 'text',
+                isRead: false // AI消息默认为未读
             });
 
             await aiMessage.save();
             lastAiMessage = aiMessage;
-            console.log('✅ AI回复片段已保存:', aiMessage._id, '内容:', chunk.slice(0, 30));
+            console.log('✅ AI回复片段已保存:', aiMessage._id, '内容:', chunk.slice(0, 30), 'isRead:', aiMessage.isRead);
         }
 
         // 发送"停止输入"事件
