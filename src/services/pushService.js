@@ -13,25 +13,34 @@ exports.sendPushNotification = async (subscription, payload) => {
         console.log('📤 开始发送推送通知...');
         console.log('📤 订阅对象:', JSON.stringify(subscription).slice(0, 150));
         console.log('📤 推送载荷:', payload);
-        
+
         const result = await webpush.sendNotification(subscription, JSON.stringify(payload));
         console.log('✅ 推送通知发送成功, 结果:', result);
         return { success: true };
     } catch (error) {
         console.error('❌ 推送通知发送失败:', error.message);
         console.error('❌ 错误详情:', error);
-        
+
         // 如果订阅过期，移除订阅
         if (error.statusCode === 410) {
             console.log('❌ 订阅已过期 (statusCode: 410)');
             return { success: false, expired: true };
         }
-        
+
+        // 如果是 VAPID 密钥不匹配错误（通常是状态码 401 或包含 "Unauthorized"）
+        if (error.statusCode === 401 ||
+            (error.message && error.message.includes('Unauthorized')) ||
+            (error.message && error.message.includes('公钥不匹配')) ||
+            (error.body && error.body.includes('public key'))) {
+            console.log('❌ VAPID密钥不匹配或无效，订阅需要重新注册');
+            return { success: false, expired: true, keyMismatch: true };
+        }
+
         // 其他错误
         if (error.statusCode) {
             console.log('❌ HTTP状态码:', error.statusCode);
         }
-        
+
         return { success: false, expired: false };
     }
 };
