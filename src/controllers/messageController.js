@@ -112,8 +112,11 @@ exports.sendMessage = async (req, res) => {
                             continue;
                         }
                         const participant = await User.findById(participantId);
-                        // 支持多设备订阅
-                        const subscriptions = participant?.pushSubscriptions || [];
+                        // 支持多设备订阅，兼容旧格式
+                        let subscriptions = participant?.pushSubscriptions || [];
+                        if ((!subscriptions || subscriptions.length === 0) && participant?.pushSubscription) {
+                            subscriptions = [participant.pushSubscription];
+                        }
                         if (participant && subscriptions.length > 0) {
                             try {
                                 const payload = {
@@ -131,7 +134,7 @@ exports.sendMessage = async (req, res) => {
                                         );
                                     }
                                 }
-                                if (participant.pushSubscriptions.length !== subscriptions.length) {
+                                if (participant.pushSubscriptions && participant.pushSubscriptions.length !== subscriptions.length) {
                                     await participant.save();
                                 }
                                 console.log('✅ 推送通知已发送给:', participant.username);
@@ -1080,12 +1083,16 @@ async function processAIReply(chatId, senderId, content) {
             });
         }
 
-        // 发送推送通知（支持多设备）
+        // 发送推送通知（支持多设备，兼容旧格式）
         console.log('📨 开始发送推送通知流程');
         console.log('📨 user是否存在:', !!user);
 
-        // 支持多设备订阅
-        const subscriptions = user?.pushSubscriptions || [];
+        // 支持多设备订阅：优先使用 pushSubscriptions，兼容旧格式 pushSubscription
+        let subscriptions = user?.pushSubscriptions || [];
+        // 兼容旧格式：如果 pushSubscriptions 为空但 pushSubscription 存在，转换为数组
+        if ((!subscriptions || subscriptions.length === 0) && user?.pushSubscription) {
+            subscriptions = [user.pushSubscription];
+        }
         console.log('📨 用户订阅数量:', subscriptions.length);
 
         if (!user) {
@@ -1116,9 +1123,11 @@ async function processAIReply(chatId, senderId, content) {
                     } else {
                         failedCount++;
                         // 移除失败的订阅
-                        user.pushSubscriptions = user.pushSubscriptions.filter(
-                            s => s.endpoint !== sub.endpoint
-                        );
+                        if (user.pushSubscriptions) {
+                            user.pushSubscriptions = user.pushSubscriptions.filter(
+                                s => s.endpoint !== sub.endpoint
+                            );
+                        }
                     }
                 }
 
