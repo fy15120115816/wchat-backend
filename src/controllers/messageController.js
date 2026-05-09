@@ -1059,6 +1059,10 @@ async function processAIReply(chatId, senderId, content) {
         }
 
         // 发送推送通知
+        console.log('📨 开始发送推送通知流程');
+        console.log('📨 user是否存在:', !!user);
+        console.log('📨 user.pushSubscription是否存在:', user?.pushSubscription ? '存在' : '不存在');
+
         if (!user) {
             console.log('❌ user未定义，跳过推送通知');
         } else if (user.pushSubscription) {
@@ -1080,6 +1084,8 @@ async function processAIReply(chatId, senderId, content) {
                     console.log('✅ 推送通知发送成功');
                 } else {
                     console.log('❌ 推送通知发送失败:', result);
+                    console.log('❌ result.success:', result.success);
+                    console.log('❌ result.expired:', result.expired);
                     // 任何推送失败都移除订阅，让前端重新注册
                     console.log('⚠️ 推送失败，移除订阅以允许重新注册');
                     user.pushSubscription = null;
