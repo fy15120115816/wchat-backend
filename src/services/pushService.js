@@ -4,8 +4,8 @@ const webpush = require('web-push');
 // 配置 VAPID 密钥
 webpush.setVapidDetails(
     'mailto:admin@example.com',
-    process.env.VAPID_PUBLIC_KEY || 'BGxXA4YCH74ZuMslvhQdcSDBpiJwqIa2cSSEidlEJFkCmmCCrIb5gvAY1HlZbka1btjx3E_MkXcQ7SSKT_O9vfY',
-    process.env.VAPID_PRIVATE_KEY || 'XNCgjOzv1EPCLrpc8suxhwZSR88wDFlztQE0HSqLLFY'
+    process.env.VAPID_PUBLIC_KEY || 'BGzFvf8l6peZ1V5nxljJ6cS6SY8mof6fJDLSx6EukkQWDw6kayDdnTDaRm8qZGaQOLLD3Q5Edt6ZUiN4zxnEmM0',
+    process.env.VAPID_PRIVATE_KEY || 'mo4qOwvxmB3T1LUsnYZIMOH1KS9_DKSgYgutNdqBM1I'
 );
 
 exports.sendPushNotification = async (subscription, payload) => {
