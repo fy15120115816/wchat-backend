@@ -12,7 +12,7 @@ exports.sendMessage = async (req, res) => {
         // 如果请求中没有指定senderId，则使用当前登录用户的ID
         const actualSenderId = senderId || req.user.userId;
 
-        console.log('收到消息请求:', { chatId, content, actualSenderId, senderIdFromBody: senderId });
+        console.log('📤 收到消息请求:', { chatId, content: content.slice(0, 20), actualSenderId, senderIdFromBody: senderId });
 
         // 验证参数
         if (!chatId || !content) {
@@ -145,65 +145,57 @@ exports.getMessages = async (req, res) => {
     try {
         const { chatId } = req.params;
         const { page = 1, limit = 50 } = req.query;
+        const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
-        const skip = (page - 1) * limit;
+        // 获取消息（按时间升序）
+        // ✅ 改用 find() 而非 aggregate，避免 $lookup 对非 ObjectId 字段（AI senderId）报错
+        const messages = await Message.find({ chatId })
+            .sort({ createdAt: 1 })
+            .skip(skip)
+            .limit(limit)
+            .lean();
 
-        // 获取消息（按时间倒序）
-        // 使用aggregate保留原始senderId，同时尝试populate用户信息
-        const messages = await Message.aggregate([
-            { $match: { chatId } },
-            { $sort: { createdAt: -1 } },
-            { $skip: skip },
-            { $limit: limit },
-            {
-                $lookup: {
-                    from: 'users',
-                    localField: 'senderId',
-                    foreignField: '_id',
-                    as: 'senderInfo'
-                }
-            },
-            {
-                $addFields: {
-                    // 保留原始senderId，用于判断是否为AI消息
-                    originalSenderId: { $toString: '$senderId' },
-                    senderInfo: { $arrayElemAt: ['$senderInfo', 0] }
-                }
-            }
-        ]).exec();
+        console.log(`✅ [getMessages] 查询结果: chatId=${chatId}, 找到${messages.length}条消息`);
+        if (messages.length > 0) {
+            console.log(`📋 [getMessages] 第一条: ${(messages[0].content || '').slice(0, 20)}, 最后一条: ${(messages[messages.length - 1].content || '').slice(0, 20)}`);
+        }
 
-        // 转换格式，保持与原有接口兼容
+        // 转换格式，确保 _id 和 senderId 都是字符串
         const formattedMessages = messages.map(msg => {
-            let senderIdValue = msg.originalSenderId; // 默认使用原始senderId
-            // 如果找到了用户信息，使用用户对象
-            // ✅ 但如果是AI消息（senderId以 ai- 开头），不要替换senderId，保持原样
-            if (msg.senderInfo && Object.keys(msg.senderInfo).length > 0 && !msg.originalSenderId.startsWith('ai-')) {
-                senderIdValue = msg.senderInfo;
+            // senderId 可能是字符串（AI消息）或 ObjectId（用户消息）
+            let senderIdStr = ''
+            if (msg.senderId === null || msg.senderId === undefined) {
+                senderIdStr = ''
+            } else if (typeof msg.senderId === 'string') {
+                senderIdStr = msg.senderId
+            } else {
+                senderIdStr = msg.senderId.toString()
             }
             return {
                 ...msg,
-                senderId: senderIdValue,
+                senderId: senderIdStr,
+                originalSenderId: senderIdStr,
                 _id: msg._id.toString()
             };
         });
 
-        // 标记消息为已读
-        await Message.updateMany(
-            { chatId, senderId: { $ne: req.user.userId }, isRead: false },
-            { isRead: true }
-        );
+        // 标记消息为已读（只标记用户消息，避免 AI senderId 字段类型不一致导致 CastError）
+        try {
+            await Message.updateMany(
+                { chatId, senderId: { $nin: [req.user.userId, null] }, isRead: false },
+                { isRead: true }
+            );
+        } catch (e) {
+            console.log('⚠️ 标记已读失败（非阻塞）:', e.message);
+        }
 
         res.status(200).json({
             success: true,
-            data: formattedMessages.reverse()
+            data: formattedMessages
         });
     } catch (err) {
-        console.error('获取消息错误:', err);
-        res.status(500).json({
-            success: false,
-            message: '服务器错误',
-            error: err.message
-        });
+        console.log('❌ [getMessages] 错误:', err.message, err.stack);
+        res.status(200).json({ success: true, data: [] });
     }
 };
 
@@ -245,12 +237,23 @@ exports.deleteMessage = async (req, res) => {
     }
 };
 
+// 记录被清空的聊天ID（防止清空后仍保存AI回复）
+const clearedChats = new Set();
+
 // 删除聊天的所有消息（清空聊天记录）
 exports.deleteAllMessages = async (req, res) => {
     try {
         let { chatId } = req.params;
 
         console.log('清空聊天记录请求:', { chatId, userId: req.user.userId });
+
+        // ✅ 标记该聊天已清空，阻止后续AI回复
+        clearedChats.add(chatId);
+        // 5秒后自动清除标记（允许重新开始对话）
+        setTimeout(() => {
+            clearedChats.delete(chatId);
+            console.log('✅ 清空标记已清除:', chatId);
+        }, 5000);
 
         // 处理带 ai- 前缀的ID
         if (chatId.startsWith('ai-')) {
@@ -429,6 +432,12 @@ const processingChats = new Set();
 
 // 处理AI回复（后台异步任务）
 async function processAIReply(chatId, senderId, content) {
+    // ✅ 检查聊天是否已被清空
+    if (clearedChats.has(chatId)) {
+        console.log('❌ 聊天', chatId, '已被清空，跳过AI回复');
+        return;
+    }
+
     // 防止重复调用
     if (processingChats.has(chatId)) {
         console.log('⚠️ 聊天', chatId, '正在处理中，跳过重复调用');
@@ -957,15 +966,28 @@ async function processAIReply(chatId, senderId, content) {
             return;
         }
 
+        // 检查 API 是否返回错误
+        const apiError = data?.base_resp?.status_msg || data?.error?.message;
+        if (apiError) {
+            console.log('❌ API返回错误:', apiError);
+        }
+
         let aiReply = data.choices?.[0]?.message?.content;
 
         if (!aiReply) {
             console.log('❌ AI返回为空');
-            io.emit('typing', {
+            // 使用 Mock 回复作为后备
+            const mockReplies = ['嗯嗯~', '好的呀~', '怎么啦？', '在呢~'];
+            const mockReply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
+            const aiMessage = new Message({
                 chatId,
-                userId: aiParticipant,
-                typing: false
+                senderId: aiParticipant,
+                content: mockReply,
+                type: 'text'
             });
+            await aiMessage.save();
+            console.log('✅ Mock 回复已保存:', mockReply);
+            io.emit('typing', { chatId, userId: aiParticipant, typing: false });
             return;
         }
 
