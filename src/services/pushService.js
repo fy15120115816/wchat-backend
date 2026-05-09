@@ -27,14 +27,24 @@ exports.sendPushNotification = async (subscription, payload) => {
             return { success: false, expired: true };
         }
 
+        // 调试：打印错误对象的所有属性
+        console.log('❌ 错误对象类型:', typeof error);
+        console.log('❌ 错误对象keys:', Object.keys(error));
+        console.log('❌ 错误完整信息:', JSON.stringify(error, (key, value) => {
+            if (key === 'stack') return '[stack]';
+            if (key === 'headers') return JSON.stringify(value).slice(0, 200);
+            return value;
+        }, 2));
+
         // 如果是 VAPID 密钥不匹配错误（通常是状态码 401/400 或包含相关关键词）
-        if (error.statusCode === 401 || 
+        const errorStr = JSON.stringify(error);
+        if (error.statusCode === 401 ||
             error.statusCode === 400 ||
             (error.message && error.message.includes('Unauthorized')) ||
             (error.message && error.message.includes('公钥不匹配')) ||
-            (error.body && error.body?.includes('public key')) ||
-            (error.headers && error.headers['x-wms-error-description']?.includes('公钥')) ||
-            (error.body && error.body.includes('mismatch'))) {
+            errorStr.includes('public key') ||
+            errorStr.includes('mismatch') ||
+            errorStr.includes('key') && errorStr.includes('match')) {
             console.log('❌ VAPID密钥不匹配或无效，订阅需要重新注册');
             return { success: false, expired: true, keyMismatch: true };
         }
