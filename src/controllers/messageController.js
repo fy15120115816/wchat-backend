@@ -95,31 +95,39 @@ exports.sendMessage = async (req, res) => {
             console.log('   - chatId:', chatId);
         }
 
-        // 发送推送通知给其他参与者
+        // 发送推送通知给其他参与者（仅在非AI聊天中发送，AI聊天的推送通知由processAIReply处理）
         if (chat) {
-            for (const participantId of chat.participants) {
-                if (participantId.toString() !== senderId) {
-                    const participantIdStr = participantId.toString();
-                    // 跳过 AI 角色参与者（senderId 格式为 "ai-{id}"，不是真实 User 文档）
-                    if (participantIdStr.startsWith('ai-')) {
-                        continue;
-                    }
-                    const participant = await User.findById(participantId);
-                    if (participant && participant.pushSubscription) {
-                        try {
-                            const payload = {
-                                title: participant.nickname || participant.username || '新消息',
-                                body: content.slice(0, 50),
-                                url: `/chat/${chatId}`
-                            };
-                            await sendPushNotification(participant.pushSubscription, payload);
-                            console.log('✅ 推送通知已发送给:', participant.username);
-                        } catch (pushError) {
-                            console.error('❌ 推送通知发送失败:', pushError.message);
-                            // 如果订阅过期，移除订阅
-                            if (pushError.statusCode === 410) {
-                                participant.pushSubscription = null;
-                                await participant.save();
+            // 检查是否是AI聊天（参与者中包含AI角色）
+            const isAIchat = chat.participants.some(p => p.toString().startsWith('ai-'));
+
+            // 如果是AI聊天，跳过推送通知（AI回复时会单独发送）
+            if (isAIchat) {
+                console.log('ℹ️ AI聊天，跳过用户消息的推送通知');
+            } else {
+                for (const participantId of chat.participants) {
+                    if (participantId.toString() !== senderId) {
+                        const participantIdStr = participantId.toString();
+                        // 跳过 AI 角色参与者（senderId 格式为 "ai-{id}"，不是真实 User 文档）
+                        if (participantIdStr.startsWith('ai-')) {
+                            continue;
+                        }
+                        const participant = await User.findById(participantId);
+                        if (participant && participant.pushSubscription) {
+                            try {
+                                const payload = {
+                                    title: participant.nickname || participant.username || '新消息',
+                                    body: content.slice(0, 50),
+                                    url: `/chat/${chatId}`
+                                };
+                                await sendPushNotification(participant.pushSubscription, payload);
+                                console.log('✅ 推送通知已发送给:', participant.username);
+                            } catch (pushError) {
+                                console.error('❌ 推送通知发送失败:', pushError.message);
+                                // 如果订阅过期，移除订阅
+                                if (pushError.statusCode === 410) {
+                                    participant.pushSubscription = null;
+                                    await participant.save();
+                                }
                             }
                         }
                     }
