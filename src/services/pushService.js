@@ -2,10 +2,16 @@
 const webpush = require('web-push');
 
 // 配置 VAPID 密钥
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || 'BGzFvf8l6peZ1V5nxljJ6cS6SY8mof6fJDLSx6EukkQWDw6kayDdnTDaRm8qZGaQOLLD3Q5Edt6ZUiN4zxnEmM0';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || 'mo4qOwvxmB3T1LUsnYZIMOH1KS9_DKSgYgutNdqBM1I';
+
+console.log('🔑 VAPID_PUBLIC_KEY (环境变量):', process.env.VAPID_PUBLIC_KEY || '未设置，使用默认值');
+console.log('🔑 VAPID_PUBLIC_KEY (实际使用):', VAPID_PUBLIC_KEY);
+
 webpush.setVapidDetails(
     'mailto:admin@example.com',
-    process.env.VAPID_PUBLIC_KEY || 'BGzFvf8l6peZ1V5nxljJ6cS6SY8mof6fJDLSx6EukkQWDw6kayDdnTDaRm8qZGaQOLLD3Q5Edt6ZUiN4zxnEmM0',
-    process.env.VAPID_PRIVATE_KEY || 'mo4qOwvxmB3T1LUsnYZIMOH1KS9_DKSgYgutNdqBM1I'
+    VAPID_PUBLIC_KEY,
+    VAPID_PRIVATE_KEY
 );
 
 exports.sendPushNotification = async (subscription, payload) => {
