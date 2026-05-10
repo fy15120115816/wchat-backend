@@ -365,8 +365,9 @@ function splitReply(content, maxChunks) {
 
 // 处理AI回复（后台异步任务）
 async function processAIReply(chatId, senderId, content) {
-    // io 在整个函数中都需要用到（包括 catch），所以定义在 try 外面
+    // 所有关键变量定义在 try 外面，确保 catch 块也能访问
     let io;
+    let chat, aiParticipantStr, aiCharId, aiCharacter, user;
     try {
         io = require('../app').io;
         console.log('🔄 开始处理AI回复, chatId:', chatId, 'senderId:', senderId);
@@ -374,7 +375,7 @@ async function processAIReply(chatId, senderId, content) {
         // ⚠️ 不使用 populate！participants 数组中 ai-xxx 字符串不是 ObjectId，
         // populate 会尝试从 User collection 解析它，导致返回 null。
         // 直接查询 chat，不 populateparticipants。
-        const chat = await Chat.findById(chatId);
+        chat = await Chat.findById(chatId);
         if (!chat) {
             console.log('❌ 找不到聊天, chatId:', chatId);
             return;
@@ -383,7 +384,7 @@ async function processAIReply(chatId, senderId, content) {
 
         // 找出 AI 角色参与者：直接用字符串匹配，不依赖 populate
         // chat.participants 是字符串数组，如 ['userObjectId', 'ai-moxxx']
-        const aiParticipantStr = chat.participants.find(p => {
+        aiParticipantStr = chat.participants.find(p => {
             const str = String(p || '');
             return str.startsWith('ai-');
         });
@@ -392,13 +393,13 @@ async function processAIReply(chatId, senderId, content) {
             return;
         }
         // aiParticipantStr 格式为 'ai-moxxx'，AICharacter.userId 存的是 'moxxx'（无前缀）
-        const aiCharId = aiParticipantStr.startsWith('ai-') ? aiParticipantStr.replace('ai-', '') : aiParticipantStr;
+        aiCharId = aiParticipantStr.startsWith('ai-') ? aiParticipantStr.replace('ai-', '') : aiParticipantStr;
         console.log('✅ 找到AI角色字符串:', aiParticipantStr, '-> aiCharId:', aiCharId);
 
         // 获取AI角色信息
         // ⚠️ AICharacter 的主键是 _id（存的就是角色ID，如 'mopuc8womrgft6xbxk'）
         // userId 字段存的是"拥有者"的 userId，不是角色ID
-        let aiCharacter = await AICharacter.findById(aiCharId);
+        aiCharacter = await AICharacter.findById(aiCharId);
         if (!aiCharacter) {
             console.log('❌ findById 查不到, aiCharId:', aiCharId);
             // 备选：用 userId 字段查（兼容旧数据，userId 误存为角色ID的情况）
@@ -425,7 +426,7 @@ async function processAIReply(chatId, senderId, content) {
         console.log('📝 发送正在输入事件');
 
         // 获取用户的API配置
-        const user = await User.findById(senderId);
+        user = await User.findById(senderId);
         if (!user) {
             console.log('❌ 找不到用户');
             return;
