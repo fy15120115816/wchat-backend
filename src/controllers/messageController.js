@@ -490,8 +490,37 @@ async function processAIReply(chatId, senderId, content) {
         clearTimeout(timeoutId);
         console.log('✅ AI API响应状态:', response.status);
 
-        const data = await response.json();
-        let aiReply = data.choices?.[0]?.message?.content;
+        // ⚠️ 先检查响应内容是否为 JSON，避免 response.json() 抛异常
+        const contentType = response.headers.get('content-type') || '';
+
+        if (!response.ok) {
+            // API 返回错误状态码（4xx/5xx），读取错误信息后使用 Mock 兜底
+            let errDetail = '';
+            try {
+                const errData = await response.json();
+                errDetail = errData?.error?.message || errData?.message || JSON.stringify(errData).slice(0, 100);
+            } catch {
+                try { errDetail = (await response.text()).slice(0, 200); } catch { errDetail = `HTTP ${response.status}`; }
+            }
+            console.error('❌ AI API请求失败:', response.status, errDetail);
+            aiReply = null;
+        } else if (!contentType.includes('application/json')) {
+            // API 返回了非 JSON（如 HTML 错误页面）
+            const rawText = await response.text();
+            console.error('❌ API返回非JSON内容:', rawText.slice(0, 200));
+            aiReply = null;
+        } else {
+            try {
+                const data = await response.json();
+                aiReply = data?.choices?.[0]?.message?.content;
+                console.log('📦 AI响应内容:', aiReply ? aiReply.slice(0, 50) : '(空)');
+            } catch (jsonErr) {
+                console.error('❌ JSON解析失败:', jsonErr.message);
+                const rawText = await response.text().catch(() => '');
+                console.error('   原始内容:', rawText.slice(0, 200));
+                aiReply = null;
+            }
+        }
 
         if (!aiReply) {
             console.log('❌ AI返回为空，使用Mock兜底');
