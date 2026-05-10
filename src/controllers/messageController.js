@@ -396,20 +396,23 @@ async function processAIReply(chatId, senderId, content) {
         console.log('✅ 找到AI角色字符串:', aiParticipantStr, '-> aiCharId:', aiCharId);
 
         // 获取AI角色信息
-        const aiCharacter = await AICharacter.findOne({ userId: aiCharId });
+        // ⚠️ AICharacter 的主键是 _id（存的就是角色ID，如 'mopuc8womrgft6xbxk'）
+        // userId 字段存的是"拥有者"的 userId，不是角色ID
+        let aiCharacter = await AICharacter.findById(aiCharId);
         if (!aiCharacter) {
-            console.log('❌ 找不到AI角色信息, aiCharId:', aiCharId, '（已尝试去掉ai-前缀）');
-            // 尝试直接用 aiParticipantStr 查询
-            const altChar = await AICharacter.findOne({ userId: aiParticipantStr });
-            if (altChar) {
-                console.log('✅ 备用查询成功，AICharacter.userId 实际存的是带 ai- 前缀的');
-                // 修复：更新 userId 为不带前缀的版本
-                altChar.userId = aiCharId;
-                await altChar.save();
-                console.log('✅ 已修复 AICharacter.userId 前缀问题');
-                return; // 避免本次重复回复，下次就正常了
+            console.log('❌ findById 查不到, aiCharId:', aiCharId);
+            // 备选：用 userId 字段查（兼容旧数据，userId 误存为角色ID的情况）
+            aiCharacter = await AICharacter.findOne({ userId: aiCharId });
+            if (!aiCharacter) {
+                // 再备选：用带 ai- 前缀的 _id 查
+                aiCharacter = await AICharacter.findById(aiParticipantStr);
             }
-            return;
+            if (aiCharacter) {
+                console.log('✅ 备选查询成功:', aiCharacter.name, '_id:', aiCharacter._id, 'userId:', aiCharacter.userId);
+            } else {
+                console.log('❌ 所有查询方式都找不到该AI角色');
+                return;
+            }
         }
         console.log('✅ 找到AI角色信息:', aiCharacter.name, 'userId:', aiCharacter.userId);
 
