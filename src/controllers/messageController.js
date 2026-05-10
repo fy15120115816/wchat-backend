@@ -75,7 +75,8 @@ exports.sendMessage = async (req, res) => {
         // 发送推送通知给其他参与者
         if (chat) {
             for (const participantId of chat.participants) {
-                if (participantId.toString() !== actualSenderId) {
+                const participantIdStr = participantId._id ? participantId._id.toString() : participantId.toString();
+                if (participantIdStr !== actualSenderId && !participantIdStr.startsWith('ai-')) {
                     const participant = await User.findById(participantId);
                     if (participant && participant.pushSubscription) {
                         try {
