@@ -389,10 +389,11 @@ async function processAIReply(chatId, senderId, content) {
         const aiParticipantId = aiParticipant._id ? aiParticipant._id.toString() : aiParticipant.toString();
         console.log('✅ 找到AI角色:', aiParticipantId);
 
-        // 获取AI角色信息
-        const aiCharacter = await AICharacter.findOne({ userId: aiParticipantId });
+        // 获取AI角色信息（userId 存储时不带 ai- 前缀）
+        const aiCharId = aiParticipantId.startsWith('ai-') ? aiParticipantId.replace('ai-', '') : aiParticipantId;
+        const aiCharacter = await AICharacter.findOne({ userId: aiCharId });
         if (!aiCharacter) {
-            console.log('❌ 找不到AI角色信息');
+            console.log('❌ 找不到AI角色信息, aiCharId:', aiCharId);
             return;
         }
         console.log('✅ 找到AI角色信息:', aiCharacter.name);
