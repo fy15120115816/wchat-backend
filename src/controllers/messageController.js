@@ -1080,12 +1080,16 @@ async function processAIReply(chatId, senderId, content) {
             });
         }
 
-        // 发送推送通知（支持多设备）
+        // 发送推送通知（支持多设备，兼容旧格式）
         console.log('📨 开始发送推送通知流程');
         console.log('📨 user是否存在:', !!user);
 
-        // 支持多设备订阅
-        const subscriptions = user?.pushSubscriptions || [];
+        // 支持多设备订阅：优先使用 pushSubscriptions，兼容旧格式 pushSubscription
+        let subscriptions = user?.pushSubscriptions || [];
+        // 兼容旧格式：如果 pushSubscriptions 为空但 pushSubscription 存在，转换为数组
+        if ((!subscriptions || subscriptions.length === 0) && user?.pushSubscription) {
+            subscriptions = [user.pushSubscription];
+        }
         console.log('📨 用户订阅数量:', subscriptions.length);
 
         if (!user) {
