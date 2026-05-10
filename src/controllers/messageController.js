@@ -365,44 +365,58 @@ function splitReply(content, maxChunks) {
 
 // 处理AI回复（后台异步任务）
 async function processAIReply(chatId, senderId, content) {
+    // io 在整个函数中都需要用到（包括 catch），所以定义在 try 外面
+    let io;
     try {
+        io = require('../app').io;
         console.log('🔄 开始处理AI回复, chatId:', chatId, 'senderId:', senderId);
 
-        // 获取聊天信息
-        const chat = await Chat.findById(chatId).populate('participants');
+        // ⚠️ 不使用 populate！participants 数组中 ai-xxx 字符串不是 ObjectId，
+        // populate 会尝试从 User collection 解析它，导致返回 null。
+        // 直接查询 chat，不 populateparticipants。
+        const chat = await Chat.findById(chatId);
         if (!chat) {
             console.log('❌ 找不到聊天, chatId:', chatId);
             return;
         }
-        console.log('✅ 找到聊天:', chat._id);
+        console.log('✅ 找到聊天:', chat._id, 'participants:', chat.participants);
 
-        // 找出AI角色参与者（兼容populate后的对象和原始ID）
-        const aiParticipant = chat.participants.find(p => {
-            const id = p._id ? p._id.toString() : p.toString();
-            return id.startsWith('ai-');
+        // 找出 AI 角色参与者：直接用字符串匹配，不依赖 populate
+        // chat.participants 是字符串数组，如 ['userObjectId', 'ai-moxxx']
+        const aiParticipantStr = chat.participants.find(p => {
+            const str = String(p || '');
+            return str.startsWith('ai-');
         });
-        if (!aiParticipant) {
-            console.log('❌ 找不到AI角色参与者');
+        if (!aiParticipantStr) {
+            console.log('❌ 找不到AI角色参与者, participants:', chat.participants);
             return;
         }
-        // 获取AI角色ID（兼容populate后的对象和原始ID）
-        const aiParticipantId = aiParticipant._id ? aiParticipant._id.toString() : aiParticipant.toString();
-        console.log('✅ 找到AI角色:', aiParticipantId);
+        // aiParticipantStr 格式为 'ai-moxxx'，AICharacter.userId 存的是 'moxxx'（无前缀）
+        const aiCharId = aiParticipantStr.startsWith('ai-') ? aiParticipantStr.replace('ai-', '') : aiParticipantStr;
+        console.log('✅ 找到AI角色字符串:', aiParticipantStr, '-> aiCharId:', aiCharId);
 
-        // 获取AI角色信息（userId 存储时不带 ai- 前缀）
-        const aiCharId = aiParticipantId.startsWith('ai-') ? aiParticipantId.replace('ai-', '') : aiParticipantId;
+        // 获取AI角色信息
         const aiCharacter = await AICharacter.findOne({ userId: aiCharId });
         if (!aiCharacter) {
-            console.log('❌ 找不到AI角色信息, aiCharId:', aiCharId);
+            console.log('❌ 找不到AI角色信息, aiCharId:', aiCharId, '（已尝试去掉ai-前缀）');
+            // 尝试直接用 aiParticipantStr 查询
+            const altChar = await AICharacter.findOne({ userId: aiParticipantStr });
+            if (altChar) {
+                console.log('✅ 备用查询成功，AICharacter.userId 实际存的是带 ai- 前缀的');
+                // 修复：更新 userId 为不带前缀的版本
+                altChar.userId = aiCharId;
+                await altChar.save();
+                console.log('✅ 已修复 AICharacter.userId 前缀问题');
+                return; // 避免本次重复回复，下次就正常了
+            }
             return;
         }
-        console.log('✅ 找到AI角色信息:', aiCharacter.name);
+        console.log('✅ 找到AI角色信息:', aiCharacter.name, 'userId:', aiCharacter.userId);
 
         // 发送"正在输入"事件
-        const io = require('../app').io;
         io.emit('typing', {
             chatId,
-            userId: aiParticipantId,
+            userId: aiParticipantStr,
             typing: true
         });
         console.log('📝 发送正在输入事件');
@@ -478,10 +492,10 @@ async function processAIReply(chatId, senderId, content) {
 
         if (!aiReply) {
             console.log('❌ AI返回为空，使用Mock兜底');
-            io.emit('typing', { chatId, userId: aiParticipantId, typing: false });
+            io.emit('typing', { chatId, userId: aiParticipantStr, typing: false });
             const mockReplies = ['嗯嗯~', '好的呀~', '怎么啦？', '在呢~'];
             const mockReply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
-            const aiMessage = new Message({ chatId, senderId: aiParticipantId, content: mockReply, type: 'text' });
+            const aiMessage = new Message({ chatId, senderId: aiParticipantStr, content: mockReply, type: 'text' });
             await aiMessage.save();
             io.emit('newMessage', { chatId, message: aiMessage });
             console.log('✅ Mock 回复已保存:', mockReply);
@@ -507,7 +521,7 @@ async function processAIReply(chatId, senderId, content) {
         for (const chunk of aiReplyChunks) {
             const aiMessage = new Message({
                 chatId,
-                senderId: aiParticipantId,
+                senderId: aiParticipantStr,
                 content: chunk,
                 type: 'text'
             });
@@ -520,7 +534,7 @@ async function processAIReply(chatId, senderId, content) {
         // 发送"停止输入"事件
         io.emit('typing', {
             chatId,
-            userId: aiParticipantId,
+            userId: aiParticipantStr,
             typing: false
         });
         console.log('📝 发送停止输入事件');
@@ -559,19 +573,19 @@ async function processAIReply(chatId, senderId, content) {
     } catch (error) {
         console.error('❌ 处理AI回复失败:', error.message);
         // ⚠️ 必须发送 typing: false，否则前端一直显示"正在输入"
-        io.emit('typing', { chatId, userId: aiParticipantId, typing: false });
+        if (io) io.emit('typing', { chatId, userId: aiParticipantStr, typing: false });
         // ⚠️ Mock 兜底：当 API 不可用时生成一条模拟回复
         const mockReplies = ['嗯嗯~', '好的呀~', '怎么啦？', '在呢~'];
         const mockReply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
         try {
             const aiMessage = new Message({
                 chatId,
-                senderId: aiParticipantId,
+                senderId: aiParticipantStr || chatId,
                 content: mockReply,
                 type: 'text'
             });
             await aiMessage.save();
-            io.emit('newMessage', { chatId, message: aiMessage });
+            if (io) io.emit('newMessage', { chatId, message: aiMessage });
             console.log('✅ Mock 回复已保存:', mockReply);
         } catch (mockError) {
             console.error('❌ Mock 回复保存失败:', mockError.message);
