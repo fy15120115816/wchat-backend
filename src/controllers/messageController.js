@@ -433,13 +433,14 @@ async function processAIReply(chatId, senderId, content) {
         }
         console.log('✅ 找到用户:', user.username);
 
+        // 获取用户的API配置（优先 isDefault=true，否则取最新创建的）
         const apiConfig = await ApiConfig.findOne({ userId: senderId, isDefault: true }) ||
-            await ApiConfig.findOne({ userId: senderId });
+            await ApiConfig.findOne({ userId: senderId }).sort({ createdAt: -1 });
         if (!apiConfig) {
             console.log('❌ 用户未配置API');
             return;
         }
-        console.log('✅ 找到API配置:', apiConfig.apiUrl);
+        console.log('✅ 找到API配置:', apiConfig.apiUrl, 'isDefault:', apiConfig.isDefault);
 
         // 构建消息历史
         // ⚠️ senderId 可能是字符串（AI消息）或 ObjectId（用户消息，populate后变对象）
