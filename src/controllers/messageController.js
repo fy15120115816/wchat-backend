@@ -286,6 +286,30 @@ exports.getUnreadCount = async (req, res) => {
     }
 };
 
+// 标记消息为已读
+exports.markMessagesAsRead = async (req, res) => {
+    try {
+        const { chatId } = req.params;
+
+        await Message.updateMany(
+            { chatId, senderId: { $ne: req.user.userId }, isRead: false },
+            { isRead: true }
+        );
+
+        res.status(200).json({
+            success: true,
+            message: '消息已标记为已读'
+        });
+    } catch (err) {
+        console.error('标记消息为已读错误:', err);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误',
+            error: err.message
+        });
+    }
+};
+
 // 按句子边界分割消息（与前端 splitReply 一致）
 function splitReply(content, maxChunks) {
     if (!content) return [];
@@ -528,5 +552,6 @@ module.exports = {
     deleteMessage: exports.deleteMessage,
     deleteAllMessages: exports.deleteAllMessages,
     getUnreadCount: exports.getUnreadCount,
+    markMessagesAsRead: exports.markMessagesAsRead,
     processAIReply
 };
