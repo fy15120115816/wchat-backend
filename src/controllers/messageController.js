@@ -12,7 +12,7 @@ exports.sendMessage = async (req, res) => {
         // 如果请求中没有指定senderId，则使用当前登录用户的ID
         const actualSenderId = senderId || req.user.userId;
 
-        console.log('📤 收到消息请求:', { chatId, content: content.slice(0, 20), actualSenderId, senderIdFromBody: senderId, type: typeof actualSenderId });
+        console.log('收到消息请求:', { chatId, content, actualSenderId, senderIdFromBody: senderId });
 
         // 验证参数
         if (!chatId || !content) {
@@ -23,14 +23,12 @@ exports.sendMessage = async (req, res) => {
         }
 
         // 创建消息
-        // ✅ 用户发送的消息默认标记为已读，AI消息默认未读（由模型默认值处理）
         const message = new Message({
             chatId,
             senderId: actualSenderId,
             content,
             type,
-            image,
-            isRead: true // 用户发送的消息默认为已读
+            image
         });
 
         await message.save();
@@ -42,13 +40,11 @@ exports.sendMessage = async (req, res) => {
         // 如果找不到聊天记录，且chatId以ai-开头，则创建一个新的聊天记录
         if (!chat && chatId.startsWith('ai-')) {
             console.log('⚠️ 找不到聊天记录，创建新的AI聊天:', chatId);
-            // 从chatId中提取aiId（去掉ai-前缀）
-            const aiId = chatId.replace(/^ai-/, '');
-            const aiCharacter = await AICharacter.findById(aiId);
+            const aiCharacter = await AICharacter.findOne({ userId: chatId });
             if (aiCharacter) {
                 chat = new Chat({
                     _id: chatId,
-                    participants: [req.user.userId, `ai-${aiId}`],  // 使用 AI 角色 ID
+                    participants: [req.user.userId, chatId],
                     type: 'private',
                     lastMessage: message._id,
                     lastMessageAt: Date.now(),
@@ -56,8 +52,6 @@ exports.sendMessage = async (req, res) => {
                 });
                 await chat.save();
                 console.log('✅ 创建新的AI聊天:', chat._id);
-            } else {
-                console.log('❌ 找不到AI角色，aiId:', aiId);
             }
         } else if (!chat) {
             // 更新聊天的最后消息
@@ -67,79 +61,37 @@ exports.sendMessage = async (req, res) => {
                 updatedAt: Date.now()
             });
         }
+        console.log('聊天记录已更新:', chatId);
 
         // 如果是AI角色聊天，后台异步处理AI回复（不阻塞响应）
-        if (chat) {
-            console.log('📋 chat信息:', chat._id, 'participants:', chat.participants?.map(p => p.toString()));
-            const hasAIParticipant = chat.participants && chat.participants.some(p => p.toString().startsWith('ai-'));
-            console.log('🔍 是否有AI参与者:', hasAIParticipant);
-
-            if (hasAIParticipant) {
-                // ✅ 检查发送者是否是AI，如果是AI则不触发回复（避免AI回复自己）
-                const isAISender = actualSenderId.toString().startsWith('ai-');
-                if (isAISender) {
-                    console.log('❌ 发送者是AI，跳过processAIReply');
-                } else {
-                    console.log('✅ 检测到AI角色聊天，准备调用processAIReply');
-                    processAIReply(chatId, actualSenderId, content).catch(err => {
-                        console.error('❌ processAIReply 抛出异常:', err.message);
-                    });
-                }
-            } else {
-                console.log('❌ 不是AI角色聊天，不调用processAIReply');
-                console.log('   - chat类型:', chat.type);
-                console.log('   - participants:', chat.participants?.map(p => p.toString()));
-            }
+        console.log('🔍 检查AI角色聊天: chatId:', chatId, 'chat:', !!chat, 'participants:', chat?.participants);
+        if (chat && chat.participants.some(p => p.toString().startsWith('ai-'))) {
+            console.log('✅ 检测到AI角色聊天，准备调用processAIReply');
+            processAIReply(chatId, actualSenderId, content).catch(console.error);
         } else {
-            console.log('❌ chat为空，无法检测AI角色');
-            console.log('   - chatId:', chatId);
+            console.log('❌ 不是AI角色聊天，不调用processAIReply');
         }
 
-        // 发送推送通知给其他参与者（仅在非AI聊天中发送，AI聊天的推送通知由processAIReply处理）
+        // 发送推送通知给其他参与者
         if (chat) {
-            // 检查是否是AI聊天（参与者中包含AI角色）
-            const isAIchat = chat.participants.some(p => p.toString().startsWith('ai-'));
-
-            // 如果是AI聊天，跳过推送通知（AI回复时会单独发送）
-            if (isAIchat) {
-                console.log('ℹ️ AI聊天，跳过用户消息的推送通知');
-            } else {
-                for (const participantId of chat.participants) {
-                    if (participantId.toString() !== senderId) {
-                        const participantIdStr = participantId.toString();
-                        // 跳过 AI 角色参与者（senderId 格式为 "ai-{id}"，不是真实 User 文档）
-                        if (participantIdStr.startsWith('ai-')) {
-                            continue;
-                        }
-                        const participant = await User.findById(participantId);
-                        // 支持多设备订阅，兼容旧格式
-                        let subscriptions = participant?.pushSubscriptions || [];
-                        if ((!subscriptions || subscriptions.length === 0) && participant?.pushSubscription) {
-                            subscriptions = [participant.pushSubscription];
-                        }
-                        if (participant && subscriptions.length > 0) {
-                            try {
-                                const payload = {
-                                    title: participant.nickname || participant.username || '新消息',
-                                    body: content.slice(0, 50),
-                                    url: `/chat/${chatId}`
-                                };
-                                // 向所有订阅发送通知
-                                for (const sub of subscriptions) {
-                                    const result = await sendPushNotification(sub, payload);
-                                    if (!result.success) {
-                                        // 如果订阅失效，移除订阅
-                                        participant.pushSubscriptions = participant.pushSubscriptions.filter(
-                                            s => s.endpoint !== sub.endpoint
-                                        );
-                                    }
-                                }
-                                if (participant.pushSubscriptions && participant.pushSubscriptions.length !== subscriptions.length) {
-                                    await participant.save();
-                                }
-                                console.log('✅ 推送通知已发送给:', participant.username);
-                            } catch (pushError) {
-                                console.error('❌ 推送通知发送失败:', pushError.message);
+            for (const participantId of chat.participants) {
+                if (participantId.toString() !== senderId) {
+                    const participant = await User.findById(participantId);
+                    if (participant && participant.pushSubscription) {
+                        try {
+                            const payload = {
+                                title: participant.nickname || participant.username || '新消息',
+                                body: content.slice(0, 50),
+                                url: `/chat/${chatId}`
+                            };
+                            await sendPushNotification(participant.pushSubscription, payload);
+                            console.log('✅ 推送通知已发送给:', participant.username);
+                        } catch (pushError) {
+                            console.error('❌ 推送通知发送失败:', pushError.message);
+                            // 如果订阅过期，移除订阅
+                            if (pushError.statusCode === 410) {
+                                participant.pushSubscription = null;
+                                await participant.save();
                             }
                         }
                     }
@@ -167,50 +119,38 @@ exports.getMessages = async (req, res) => {
     try {
         const { chatId } = req.params;
         const { page = 1, limit = 50 } = req.query;
-        const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
-        // 获取消息（按时间升序）
-        // ✅ 改用 find() 而非 aggregate，避免 $lookup 对非 ObjectId 字段（AI senderId）报错
+        const skip = (page - 1) * limit;
+
+        console.log('获取消息:', { chatId, userId: req.user.userId });
+
+        // 获取消息（按时间倒序）
         const messages = await Message.find({ chatId })
-            .sort({ createdAt: 1 })
+            .populate('senderId', 'username avatar')
+            .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
             .lean();
 
-        console.log(`✅ [getMessages] 查询结果: chatId=${chatId}, 找到${messages.length}条消息`);
-        if (messages.length > 0) {
-            console.log(`📋 [getMessages] 第一条: ${(messages[0].content || '').slice(0, 20)}, 最后一条: ${(messages[messages.length - 1].content || '').slice(0, 20)}`);
-        }
+        console.log('找到消息:', messages.length, '条');
 
-        // 转换格式，确保 _id 和 senderId 都是字符串
-        const formattedMessages = messages.map(msg => {
-            // senderId 可能是字符串（AI消息）或 ObjectId（用户消息）
-            let senderIdStr = ''
-            if (msg.senderId === null || msg.senderId === undefined) {
-                senderIdStr = ''
-            } else if (typeof msg.senderId === 'string') {
-                senderIdStr = msg.senderId
-            } else {
-                senderIdStr = msg.senderId.toString()
-            }
-            return {
-                ...msg,
-                senderId: senderIdStr,
-                originalSenderId: senderIdStr,
-                _id: msg._id.toString()
-            };
-        });
-
-        // ✅ 移除自动标记已读，改为由前端显式调用 markMessagesAsRead 接口
-        // 这样聊天列表页面获取消息时不会自动清除未读状态
+        // 标记消息为已读
+        await Message.updateMany(
+            { chatId, senderId: { $ne: req.user.userId }, isRead: false },
+            { isRead: true }
+        );
 
         res.status(200).json({
             success: true,
-            data: formattedMessages
+            data: messages.reverse()
         });
     } catch (err) {
-        console.log('❌ [getMessages] 错误:', err.message, err.stack);
-        res.status(200).json({ success: true, data: [] });
+        console.error('获取消息错误:', err);
+        res.status(500).json({
+            success: false,
+            message: '服务器错误',
+            error: err.message
+        });
     }
 };
 
@@ -252,23 +192,12 @@ exports.deleteMessage = async (req, res) => {
     }
 };
 
-// 记录被清空的聊天ID（防止清空后仍保存AI回复）
-const clearedChats = new Set();
-
 // 删除聊天的所有消息（清空聊天记录）
 exports.deleteAllMessages = async (req, res) => {
     try {
         let { chatId } = req.params;
 
         console.log('清空聊天记录请求:', { chatId, userId: req.user.userId });
-
-        // ✅ 标记该聊天已清空，阻止后续AI回复
-        clearedChats.add(chatId);
-        // 5秒后自动清除标记（允许重新开始对话）
-        setTimeout(() => {
-            clearedChats.delete(chatId);
-            console.log('✅ 清空标记已清除:', chatId);
-        }, 5000);
 
         // 处理带 ai- 前缀的ID
         if (chatId.startsWith('ai-')) {
@@ -332,48 +261,14 @@ exports.deleteAllMessages = async (req, res) => {
     }
 };
 
-// 标记消息为已读
-exports.markMessagesAsRead = async (req, res) => {
-    try {
-        const { chatId } = req.params;
-        // 将 userId 转换为字符串，确保与数据库中的 senderId 类型一致
-        const userIdStr = String(req.user.userId);
-
-        // 标记所有未读消息为已读（排除自己发送的消息）
-        await Message.updateMany({
-            chatId,
-            senderId: { $ne: userIdStr },
-            isRead: false
-        }, {
-            isRead: true
-        });
-
-        console.log('✅ 消息已标记为已读:', chatId);
-
-        res.status(200).json({
-            success: true,
-            message: '消息已标记为已读'
-        });
-    } catch (err) {
-        console.error('标记消息为已读错误:', err);
-        res.status(500).json({
-            success: false,
-            message: '服务器错误',
-            error: err.message
-        });
-    }
-};
-
 // 获取未读消息数
 exports.getUnreadCount = async (req, res) => {
     try {
         const { chatId } = req.params;
-        // 将 userId 转换为字符串，确保与数据库中的 senderId 类型一致
-        const userIdStr = String(req.user.userId);
 
         const count = await Message.countDocuments({
             chatId,
-            senderId: { $ne: userIdStr },
+            senderId: { $ne: req.user.userId },
             isRead: false
         });
 
@@ -391,126 +286,89 @@ exports.getUnreadCount = async (req, res) => {
     }
 };
 
-// 按微信聊天模式分割消息
-// 规则：一句话一条消息，去掉句号，每句不超过50字
+// 按句子边界分割消息（与前端 splitReply 一致）
 function splitReply(content, maxChunks) {
     if (!content) return [];
 
-    const MAX_SENTENCE_LENGTH = 50; // 每句不超过50字
-    let trimmedContent = content.trim();
+    const MAX_CHUNK_LENGTH = 50;
+    const MAX_TOTAL_LENGTH = 150;
 
-    // 去掉所有句号
-    trimmedContent = trimmedContent.replace(/。/g, '');
+    // 先截断总长度
+    const trimmedContent = content.length > MAX_TOTAL_LENGTH
+        ? content.substring(0, MAX_TOTAL_LENGTH).replace(/[^。？！\n]+$/, '') + '...'
+        : content;
 
-    // 按句子边界分割：问号、感叹号、换行
-    const sentences = trimmedContent.split(/(?<=[？！\n])(?=[^？！\n])/g);
+    // 按句子边界分割：句号、问号、感叹号、换行
+    const sentences = trimmedContent.split(/(?<=[。？！\n])(?=[^。？！\n])/g);
 
     const chunks = [];
+    let buffer = '';
 
-    for (const sentence of sentences) {
-        let trimmed = sentence.trim();
+    for (const s of sentences) {
+        const trimmed = s.trim();
         if (!trimmed) continue;
 
-        // 如果句子太长，按逗号、顿号、分号分割
-        if (trimmed.length > MAX_SENTENCE_LENGTH) {
-            const parts = trimmed.split(/[，、；]/g);
-            let currentPart = '';
-            for (const part of parts) {
-                const partTrimmed = part.trim();
-                if (!partTrimmed) continue;
+        // 如果加上当前句子会超过单段最大长度
+        if (buffer.length + trimmed.length > MAX_CHUNK_LENGTH && buffer.length > 0) {
+            // 如果当前buffer不为空，先输出
+            chunks.push(buffer.trim());
+            buffer = '';
+        }
 
-                if (currentPart.length + partTrimmed.length + 1 > MAX_SENTENCE_LENGTH && currentPart) {
-                    chunks.push(currentPart);
-                    currentPart = partTrimmed;
-                } else if (currentPart) {
-                    currentPart += '，' + partTrimmed;
-                } else {
-                    currentPart = partTrimmed;
-                }
-            }
-            if (currentPart) {
-                chunks.push(currentPart);
-            }
+        // 将当前句子添加到buffer
+        if (buffer.length > 0) {
+            buffer += ' ' + trimmed;
         } else {
-            chunks.push(trimmed);
+            buffer = trimmed;
         }
     }
 
+    // 输出最后一段
+    if (buffer.trim()) {
+        chunks.push(buffer.trim());
+    }
+
     // 限制最大段数
-    const actualMaxChunks = maxChunks || 5;
-    if (chunks.length > actualMaxChunks) {
-        return chunks.slice(0, actualMaxChunks);
+    if (maxChunks && chunks.length > maxChunks) {
+        // 如果超过最大段数，合并最后几段
+        const remaining = chunks.slice(maxChunks - 1);
+        chunks.splice(maxChunks - 1, chunks.length - maxChunks + 1, remaining.join(' '));
     }
 
     return chunks;
 }
 
-// 正在处理的聊天ID集合（防止重复调用）
-const processingChats = new Set();
-
 // 处理AI回复（后台异步任务）
 async function processAIReply(chatId, senderId, content) {
-    // ✅ 确保 senderId 是字符串类型，避免数据库查询类型不匹配
-    senderId = senderId.toString();
-    console.log('🔄 processAIReply - senderId:', senderId, 'type:', typeof senderId);
-
-    // ✅ 检查聊天是否已被清空
-    if (clearedChats.has(chatId)) {
-        console.log('❌ 聊天', chatId, '已被清空，跳过AI回复');
-        return;
-    }
-
-    // 防止重复调用
-    if (processingChats.has(chatId)) {
-        console.log('⚠️ 聊天', chatId, '正在处理中，跳过重复调用');
-        return;
-    }
-    processingChats.add(chatId);
-
     try {
-        let aiParticipant = null;
-        const io = require('../app').io;
-
         console.log('🔄 开始处理AI回复, chatId:', chatId, 'senderId:', senderId);
 
-        // 获取聊天信息（不populate participants，避免ObjectId转换问题）
-        const chat = await Chat.findById(chatId);
+        // 获取聊天信息
+        const chat = await Chat.findById(chatId).populate('participants');
         if (!chat) {
             console.log('❌ 找不到聊天, chatId:', chatId);
             return;
         }
         console.log('✅ 找到聊天:', chat._id);
 
-        // 找出AI角色参与者（确保使用字符串比较）
-        aiParticipant = chat.participants.find(p => {
-            const participantStr = p.toString();
-            return participantStr.startsWith('ai-');
-        });
+        // 找出AI角色参与者
+        const aiParticipant = chat.participants.find(p => p.toString().startsWith('ai-'));
         if (!aiParticipant) {
             console.log('❌ 找不到AI角色参与者');
             return;
         }
-        // 确保 aiParticipant 是字符串格式
-        aiParticipant = aiParticipant.toString();
         console.log('✅ 找到AI角色:', aiParticipant);
 
-        // 获取AI角色信息（去掉ai-前缀）
-        const realAiId = aiParticipant.toString().replace(/^ai-/, '');
-        const aiCharacter = await AICharacter.findById(realAiId);
+        // 获取AI角色信息
+        const aiCharacter = await AICharacter.findOne({ userId: aiParticipant });
         if (!aiCharacter) {
-            console.log('❌ 找不到AI角色信息, realAiId:', realAiId);
-            if (io && aiParticipant) {
-                io.emit('typing', {
-                    chatId,
-                    userId: aiParticipant,
-                    typing: false
-                });
-            }
+            console.log('❌ 找不到AI角色信息');
             return;
         }
         console.log('✅ 找到AI角色信息:', aiCharacter.name);
 
         // 发送"正在输入"事件
+        const io = require('../app').io;
         io.emit('typing', {
             chatId,
             userId: aiParticipant,
@@ -522,146 +380,14 @@ async function processAIReply(chatId, senderId, content) {
         const user = await User.findById(senderId);
         if (!user) {
             console.log('❌ 找不到用户');
-            if (io && aiParticipant) {
-                io.emit('typing', {
-                    chatId,
-                    userId: aiParticipant,
-                    typing: false
-                });
-            }
             return;
         }
         console.log('✅ 找到用户:', user.username);
 
-        // 查询用户的API配置（根据消息类型选择）
-        let apiConfig;
-
-        // 获取用户的配置选择（user已经在上面获取过了）
-        const userSelections = user ? {
-            globalApiConfigId: user.globalApiConfigId,
-            textApiConfigId: user.textApiConfigId,
-            imageApiConfigId: user.imageApiConfigId
-        } : {};
-
-        // 获取最近两条消息
-        const recentMessages = await Message.find({ chatId }).sort({ createdAt: -1 }).limit(2);
-        const lastMessage = recentMessages[0];
-        const secondLastMessage = recentMessages[1];
-
-        // 检测是否为真正的图片消息（排除"文字图片"类型）
-        const isTextImageMessage = lastMessage?.content?.startsWith('[文字图片]');
-        const isLastRealImage = !isTextImageMessage && (lastMessage?.type === 'image' || lastMessage?.image);
-
-        // 检测上一条消息是否是图片消息（用于处理"图片+文字"的连续对话）
-        const isSecondLastRealImage = secondLastMessage?.type === 'image' || secondLastMessage?.image;
-
-        // 判断是否需要使用图片API
-        // 1. 当前消息是图片
-        // 2. 当前消息是文字，但上一条消息是图片（用户在询问图片内容）
-        // 图片API配置指向支持图片理解的模型（如Gemini），文字API可能不支持图片
-        const shouldUseImageAPI = isLastRealImage || (lastMessage?.type === 'text' && isSecondLastRealImage);
-
-        // 1. 根据消息类型选择对应的配置（使用用户选择）
-        if (shouldUseImageAPI) {
-            // 图片消息或图片后的文字消息：优先使用用户选择的图片配置
-            if (userSelections.imageApiConfigId) {
-                apiConfig = await ApiConfig.findById(userSelections.imageApiConfigId);
-                // 根据当前消息类型显示不同的日志
-                if (isLastRealImage) {
-                    console.log('🖼️ 检测到图片消息，使用用户选择的图片API配置:', userSelections.imageApiConfigId);
-                } else {
-                    console.log('🖼️ 检测到图片后的文字消息，使用用户选择的图片API配置:', userSelections.imageApiConfigId);
-                }
-            } else {
-                // 兼容旧的type字段配置
-                apiConfig = await ApiConfig.findOne({ userId: senderId, type: 'image' });
-                if (isLastRealImage) {
-                    console.log('🖼️ 检测到图片消息，尝试使用type=image配置');
-                } else {
-                    console.log('🖼️ 检测到图片后的文字消息，尝试使用type=image配置');
-                }
-            }
-        } else {
-            // 普通文字消息：优先使用用户选择的文字配置
-            if (userSelections.textApiConfigId) {
-                apiConfig = await ApiConfig.findById(userSelections.textApiConfigId);
-                if (isTextImageMessage) {
-                    console.log('📝 检测到文字图片消息，使用用户选择的文字API配置:', userSelections.textApiConfigId);
-                } else {
-                    console.log('📝 检测到文字消息，使用用户选择的文字API配置:', userSelections.textApiConfigId);
-                }
-            } else {
-                // 兼容旧的type字段配置
-                apiConfig = await ApiConfig.findOne({ userId: senderId, type: 'text' });
-                if (isTextImageMessage) {
-                    console.log('📝 检测到文字图片消息，尝试使用type=text配置');
-                } else {
-                    console.log('📝 检测到文字消息，尝试使用type=text配置');
-                }
-            }
-        }
-
-        // 2. 如果没有对应类型的配置，使用用户选择的全局配置
-        if (!apiConfig && userSelections?.globalApiConfigId) {
-            apiConfig = await ApiConfig.findById(userSelections.globalApiConfigId);
-            console.log('🔄 未找到对应类型配置，使用用户选择的全局配置:', userSelections.globalApiConfigId, '结果:', apiConfig ? '找到' : '未找到');
-        }
-
-        // 3. 如果没有用户选择的全局配置，使用type=global配置
+        const apiConfig = await ApiConfig.findOne({ userId: senderId, isDefault: true }) ||
+            await ApiConfig.findOne({ userId: senderId });
         if (!apiConfig) {
-            apiConfig = await ApiConfig.findOne({ userId: senderId, type: 'global' });
-            console.log('🔄 未找到用户选择的全局配置，尝试使用type=global配置, userId:', senderId, '结果:', apiConfig ? '找到' : '未找到');
-        }
-
-        // 4. 如果还是没有，使用默认配置
-        if (!apiConfig) {
-            apiConfig = await ApiConfig.findOne({ userId: senderId, isDefault: true });
-            console.log('🔄 未找到全局配置，尝试使用默认配置, userId:', senderId, '结果:', apiConfig ? '找到' : '未找到');
-        }
-
-        // 5. 如果都没有，使用任意配置
-        if (!apiConfig) {
-            apiConfig = await ApiConfig.findOne({ userId: senderId });
-            console.log('🔄 未找到默认配置，使用任意配置, userId:', senderId, '结果:', apiConfig ? '找到' : '未找到');
-        }
-
-        if (!apiConfig) {
-            console.log('❌ 用户未配置API，使用 Mock 回复');
-            // 使用 Mock 回复
-            const mockReplies = {
-                '测试': ['在呢~', '怎么了？', '你好呀~'],
-                '助手': ['在呢~', '好的呢~', '怎么啦？'],
-                '小猫': ['喵~', '喵呜~', '怎么啦？'],
-                '小狗': ['汪汪~', '怎么了？', '汪！']
-            };
-            const aiName = aiCharacter?.name || '测试';
-            const replies = mockReplies[aiName] || ['嗯', '好', '知道了'];
-            const mockReply = replies[Math.floor(Math.random() * replies.length)];
-
-            // 保存 Mock 回复
-            const aiMessage = new Message({
-                chatId,
-                senderId: aiParticipant,
-                content: mockReply,
-                type: 'text'
-            });
-            await aiMessage.save();
-            console.log('✅ Mock 回复已保存:', mockReply);
-
-            // 更新聊天的最后消息
-            await Chat.findByIdAndUpdate(chatId, {
-                lastMessage: aiMessage._id,
-                lastMessageAt: Date.now(),
-                updatedAt: Date.now()
-            });
-
-            if (io && aiParticipant) {
-                io.emit('typing', {
-                    chatId,
-                    userId: aiParticipant,
-                    typing: false
-                });
-            }
+            console.log('❌ 用户未配置API');
             return;
         }
         console.log('✅ 找到API配置:', apiConfig.apiUrl);
@@ -671,350 +397,54 @@ async function processAIReply(chatId, senderId, content) {
             .sort({ createdAt: 1 })
             .populate('senderId', 'username');
 
-        // 判断 senderId 是否为 AI 消息的辅助函数
-        const isAISender = (msg) => {
-            const senderIdStr = typeof msg.senderId === 'string'
-                ? msg.senderId
-                : msg.senderId?._id?.toString() || msg.senderId?.toString() || '';
-            return senderIdStr.startsWith('ai-');
-        };
+        const history = messages.map(msg => ({
+            role: msg.senderId.username?.startsWith('ai-') ? 'assistant' : 'user',
+            content: msg.content
+        }));
 
-        // 检查是否存在用户消息（排除AI消息）
-        const userMessages = messages.filter(msg => !isAISender(msg));
-        if (userMessages.length === 0) {
-            console.log('❌ 没有用户消息，不生成AI回复');
-            io.emit('typing', {
-                chatId,
-                userId: aiParticipant,
-                typing: false
-            });
-            return;
-        }
-
-        // 构建消息历史（过滤重复内容，支持图片消息）
-        const history = [];
-        let lastContent = '';
-        for (const msg of messages) {
-            const content = msg.content?.trim();
-            const image = msg.image?.trim();
-
-            // 跳过空消息
-            if (!content && !image) {
-                continue;
-            }
-
-            // 构建消息内容
-            let messageContent;
-            if (image && image !== '__image__' && image.startsWith('data:')) {
-                // 图片消息：使用OpenAI多模态格式（仅当使用图片API时）
-                if (shouldUseImageAPI) {
-                    messageContent = [
-                        { type: 'text', text: content || '' },
-                        { type: 'image_url', image_url: { url: image, detail: 'low' } }
-                    ];
-                } else {
-                    // 使用文字API时，只发送文字内容
-                    messageContent = content || '[图片]';
-                }
-            } else {
-                // 文字消息
-                messageContent = content;
-            }
-
-            // 跳过重复消息
-            const contentKey = content + (image ? image.substring(0, 50) : '');
-            if (contentKey && contentKey !== lastContent) {
-                history.push({
-                    role: isAISender(msg) ? 'assistant' : 'user',
-                    content: messageContent
-                });
-                lastContent = contentKey;
-            }
-        }
-
-        // 构建系统消息（先全局提示词，再角色设定）
-        const systemMessages = [];
-
-        // 1. 全局提示词（用户级别的系统提示）
-        if (user.globalSystemPrompt && user.globalSystemPrompt.trim()) {
-            systemMessages.push({
-                role: 'system',
-                content: user.globalSystemPrompt
-            });
-            console.log('📋 使用全局提示词');
-        }
-
-        // 2. 角色设定（角色级别的系统提示，包含角色名字）
-        const aiName = aiCharacter.name || '助手';
-        const personaContent = aiCharacter.persona || '你是一个乐于助人的AI助手。';
-        // 将角色名字融入系统提示，让AI认为自己就是这个角色
-        const fullPersona = `你的名字是【${aiName}】。${personaContent}`;
-        systemMessages.push({
+        // 添加角色设定
+        const systemMessage = {
             role: 'system',
-            content: fullPersona
-        });
-        console.log('📋 使用角色设定:', aiName, '-', personaContent.substring(0, 50) + (personaContent.length > 50 ? '...' : ''));
+            content: aiCharacter.persona || '你是一个乐于助人的AI助手。'
+        };
 
         // 调用AI API
         const apiUrl = apiConfig.apiUrl;
         const apiKey = apiConfig.apiKey;
         const model = apiConfig.model || 'gpt-3.5-turbo';
 
-        console.log('🔌 API配置详情:');
-        console.log('   - apiUrl:', apiUrl);
-        console.log('   - apiKey:', apiKey ? `[已配置，长度: ${apiKey.length}]` : '未配置');
-        console.log('   - model:', model);
-
         const requestBody = {
             model: model,
-            messages: [...systemMessages, ...history],
+            messages: [systemMessage, ...history],
             stream: false
         };
 
-        // 打印完整的消息结构以便调试
-        console.log('📋 发送给AI的消息结构:', JSON.stringify({
-            systemMessages: systemMessages.length,
-            historyMessages: history.length,
-            totalMessages: requestBody.messages.length,
-            systemContents: systemMessages.map((m, i) => `[${i + 1}] ${m.content.substring(0, 30)}${m.content.length > 30 ? '...' : ''}`)
-        }, null, 2));
+        console.log('🔄 调用AI API:', apiUrl);
 
-        // 确保API URL完整
-        let finalApiUrl = apiUrl;
+        // 创建 AbortController 用于超时控制
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            controller.abort();
+        }, 60000); // 60秒超时
 
-        // 强制使用 HTTPS 协议
-        if (!finalApiUrl.startsWith('https://')) {
-            if (finalApiUrl.startsWith('http://')) {
-                finalApiUrl = 'https://' + finalApiUrl.substring(7);
-            } else {
-                finalApiUrl = 'https://' + finalApiUrl;
-            }
-        }
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(apiKey && { 'Authorization': `Bearer ${apiKey}` })
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
+        });
 
-        // 确保URL以 /chat/completions 或 /v1/chat/completions 结尾
-        if (!finalApiUrl.endsWith('/chat/completions') && !finalApiUrl.endsWith('/v1/chat/completions')) {
-            if (finalApiUrl.endsWith('/')) {
-                finalApiUrl = finalApiUrl + 'v1/chat/completions';
-            } else if (finalApiUrl.endsWith('/v1')) {
-                finalApiUrl = finalApiUrl + '/chat/completions';
-            } else {
-                finalApiUrl = finalApiUrl + '/v1/chat/completions';
-            }
-        }
-
-        console.log('🔄 调用AI API:', finalApiUrl);
-
-        // 带重试的fetch函数
-        const fetchWithRetry = async (url, options, retryCount = 0) => {
-            const MAX_RETRIES = 2;
-            const RETRY_DELAY = 1000; // 重试间隔1秒
-
-            try {
-                const response = await fetchWithRedirect(url, options);
-                return response;
-            } catch (error) {
-                if (retryCount < MAX_RETRIES) {
-                    console.log(`⚠️ API调用失败，第 ${retryCount + 1} 次重试...`);
-                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-                    return await fetchWithRetry(url, options, retryCount + 1);
-                }
-                throw error;
-            }
-        };
-
-        // 处理重定向的辅助函数
-        const fetchWithRedirect = async (url, options, redirectCount = 0, visitedUrls = new Set()) => {
-            const MAX_REDIRECTS = 5;
-
-            if (redirectCount >= MAX_REDIRECTS) {
-                throw new Error('redirect count exceeded');
-            }
-
-            // 检测循环重定向
-            const normalizedUrl = url.replace(/\/$/, ''); // 移除尾部斜杠
-            if (visitedUrls.has(normalizedUrl)) {
-                console.log('⚠️ 检测到循环重定向');
-                throw new Error('循环重定向');
-            }
-
-            visitedUrls.add(normalizedUrl);
-
-            const controller = new AbortController();
-            const timeoutHandler = setTimeout(() => {
-                controller.abort();
-            }, 30000); // 30秒超时
-
-            try {
-                const response = await fetch(url, {
-                    ...options,
-                    signal: controller.signal,
-                    redirect: 'manual' // 手动处理重定向
-                });
-
-                clearTimeout(timeoutHandler);
-
-                // 处理重定向 (3xx 状态码)
-                if (response.status >= 300 && response.status < 400) {
-                    const location = response.headers.get('Location');
-                    if (location) {
-                        console.log('🔄 重定向到:', location);
-                        // 构建完整URL（处理相对路径）
-                        const newUrl = new URL(location, url).href;
-                        return await fetchWithRedirect(newUrl, options, redirectCount + 1, visitedUrls);
-                    }
-                }
-
-                return response;
-            } finally {
-                clearTimeout(timeoutHandler);
-            }
-        };
-
-        let response;
-        try {
-            response = await fetchWithRetry(finalApiUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(apiKey && { 'Authorization': `Bearer ${apiKey}` })
-                },
-                body: JSON.stringify(requestBody)
-            });
-        } catch (fetchError) {
-            console.error('❌ fetch 调用失败:', fetchError.message);
-            console.log('⚠️ API调用失败，使用Mock回复作为后备');
-
-            // 使用智能 Mock 回复（遵循角色人设）
-            const persona = aiCharacter?.persona || '你是一个乐于助人的AI助手。';
-            const userQuestion = userMessages[userMessages.length - 1]?.content || '';
-
-            // 根据角色人设和用户问题生成更自然的回复
-            let mockReply;
-            if (persona.includes('温柔') || persona.includes('可爱')) {
-                const gentleReplies = {
-                    '你是谁': '我是你的AI小伙伴呀~ 很高兴认识你！😊',
-                    '在吗': '在呢~ 有什么事吗？💕',
-                    '你好': '你好呀~ 今天心情怎么样？😊',
-                    '干嘛': '没干嘛呀，在等你找我聊天呢~ 😘',
-                    '聊天': '好呀好呀，我们聊点什么呢？✨'
-                };
-                mockReply = gentleReplies[userQuestion] || ['嗯嗯~', '好的呢~', '我在听呢~', '怎么啦？'][Math.floor(Math.random() * 4)];
-            } else if (persona.includes('小猫') || persona.includes('猫')) {
-                mockReply = ['喵~', '喵呜~', '喵~ 怎么了？'][Math.floor(Math.random() * 3)];
-            } else if (persona.includes('小狗') || persona.includes('狗')) {
-                mockReply = ['汪汪~', '汪！', '怎么了？'][Math.floor(Math.random() * 3)];
-            } else {
-                mockReply = ['好的', '我知道了', '明白'][Math.floor(Math.random() * 3)];
-            }
-
-            // 保存 Mock 回复
-            const aiMessage = new Message({
-                chatId,
-                senderId: aiParticipant,
-                content: mockReply,
-                type: 'text'
-            });
-            await aiMessage.save();
-            console.log('✅ Mock 回复已保存:', mockReply);
-
-            // 更新聊天的最后消息
-            await Chat.findByIdAndUpdate(chatId, {
-                lastMessage: aiMessage._id,
-                lastMessageAt: Date.now(),
-                updatedAt: Date.now()
-            });
-
-            if (io && aiParticipant) {
-                io.emit('typing', {
-                    chatId,
-                    userId: aiParticipant,
-                    typing: false
-                });
-            }
-            return;
-        }
-
+        clearTimeout(timeoutId);
         console.log('✅ AI API响应状态:', response.status);
 
-        // 打印完整响应以便调试
-        const responseText = await response.text();
-        console.log('📦 AI API 原始响应:', responseText.slice(0, 500));
-
-        let data;
-        try {
-            data = JSON.parse(responseText);
-        } catch (parseError) {
-            console.error('❌ JSON 解析失败:', parseError.message, '原始响应:', responseText.slice(0, 200));
-            return;
-        }
-
-        console.log('📦 AI API 解析后数据:', JSON.stringify(data).slice(0, 300));
-
-        // 检查是否有错误
-        if (data.error) {
-            console.error('❌ AI API 返回错误:', data.error.message);
-            console.log('⚠️ API调用失败，使用Mock回复作为后备');
-
-            // 使用 Mock 回复作为后备
-            const mockReplies = {
-                '测试': ['在呢~', '怎么了？', '你好呀~'],
-                '助手': ['在呢~', '好的呢~', '怎么啦？'],
-                '小猫': ['喵~', '喵呜~', '怎么啦？'],
-                '小狗': ['汪汪~', '怎么了？', '汪！']
-            };
-            const aiName = aiCharacter?.name || '测试';
-            const replies = mockReplies[aiName] || ['嗯', '好', '知道了'];
-            const mockReply = replies[Math.floor(Math.random() * replies.length)];
-
-            // 保存 Mock 回复
-            const aiMessage = new Message({
-                chatId,
-                senderId: aiParticipant,
-                content: mockReply,
-                type: 'text'
-            });
-            await aiMessage.save();
-            console.log('✅ Mock 回复已保存:', mockReply);
-
-            // 更新聊天的最后消息
-            await Chat.findByIdAndUpdate(chatId, {
-                lastMessage: aiMessage._id,
-                lastMessageAt: Date.now(),
-                updatedAt: Date.now()
-            });
-
-            if (io && aiParticipant) {
-                io.emit('typing', {
-                    chatId,
-                    userId: aiParticipant,
-                    typing: false
-                });
-            }
-            return;
-        }
-
-        // 检查 API 是否返回错误
-        const apiError = data?.base_resp?.status_msg || data?.error?.message;
-        if (apiError) {
-            console.log('❌ API返回错误:', apiError);
-        }
-
+        const data = await response.json();
         let aiReply = data.choices?.[0]?.message?.content;
 
         if (!aiReply) {
             console.log('❌ AI返回为空');
-            // 使用 Mock 回复作为后备
-            const mockReplies = ['嗯嗯~', '好的呀~', '怎么啦？', '在呢~'];
-            const mockReply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
-            const aiMessage = new Message({
-                chatId,
-                senderId: aiParticipant,
-                content: mockReply,
-                type: 'text'
-            });
-            await aiMessage.save();
-            console.log('✅ Mock 回复已保存:', mockReply);
-            io.emit('typing', { chatId, userId: aiParticipant, typing: false });
             return;
         }
 
@@ -1035,35 +465,16 @@ async function processAIReply(chatId, senderId, content) {
         // 创建多条AI回复消息
         let lastAiMessage = null;
         for (const chunk of aiReplyChunks) {
-            // 在保存前再次检查是否存在用户消息（防止清空聊天记录后仍保存回复）
-            // 使用字符串比较，确保正确匹配
-            const currentMessages = await Message.find({ chatId });
-            const currentUserMessages = currentMessages.filter(msg => {
-                const senderIdStr = msg.senderId.toString();
-                return !senderIdStr.startsWith('ai-');
-            });
-
-            if (currentUserMessages.length === 0) {
-                console.log('❌ 用户消息已被清空，不保存AI回复');
-                io.emit('typing', {
-                    chatId,
-                    userId: aiParticipant,
-                    typing: false
-                });
-                return;
-            }
-
             const aiMessage = new Message({
                 chatId,
                 senderId: aiParticipant,
                 content: chunk,
-                type: 'text',
-                isRead: false // AI消息默认为未读
+                type: 'text'
             });
 
             await aiMessage.save();
             lastAiMessage = aiMessage;
-            console.log('✅ AI回复片段已保存:', aiMessage._id, '内容:', chunk.slice(0, 30), 'isRead:', aiMessage.isRead);
+            console.log('✅ AI回复片段已保存:', aiMessage._id, '内容:', chunk.slice(0, 30));
         }
 
         // 发送"停止输入"事件
@@ -1083,97 +494,39 @@ async function processAIReply(chatId, senderId, content) {
             });
         }
 
-        // 发送推送通知（支持多设备，兼容旧格式）
-        console.log('📨 开始发送推送通知流程');
-        console.log('📨 user是否存在:', !!user);
-
-        // 支持多设备订阅：优先使用 pushSubscriptions，兼容旧格式 pushSubscription
-        let subscriptions = user?.pushSubscriptions || [];
-        // 兼容旧格式：如果 pushSubscriptions 为空但 pushSubscription 存在，转换为数组
-        if ((!subscriptions || subscriptions.length === 0) && user?.pushSubscription) {
-            subscriptions = [user.pushSubscription];
-        }
-        console.log('📨 用户订阅数量:', subscriptions.length);
-
-        if (!user) {
-            console.log('❌ user未定义，跳过推送通知');
-        } else if (subscriptions && subscriptions.length > 0) {
+        // 发送推送通知
+        console.log('🔍 检查用户推送订阅:', user._id, 'pushSubscription:', !!user.pushSubscription);
+        if (user.pushSubscription) {
+            console.log('📤 准备发送推送通知给用户:', user._id);
+            console.log('📤 推送订阅信息:', JSON.stringify(user.pushSubscription));
             try {
-                console.log('🔔 准备向', subscriptions.length, '个设备发送推送通知');
-
                 const payload = {
                     title: aiCharacter.name || 'AI助手',
                     body: aiReply.slice(0, 50),
                     url: `/chat/${chatId}`
                 };
-
-                console.log('🔔 推送内容:', payload);
-
-                // 向所有订阅发送通知
-                let successCount = 0;
-                let failedCount = 0;
-
-                for (const sub of subscriptions) {
-                    console.log('🔔 向端点发送:', sub.endpoint?.slice(0, 50));
-                    const result = await sendPushNotification(sub, payload);
-                    console.log('🔔 推送结果:', JSON.stringify(result));
-
-                    if (result.success) {
-                        successCount++;
-                    } else {
-                        failedCount++;
-                        // 移除失败的订阅
-                        if (user.pushSubscriptions) {
-                            user.pushSubscriptions = user.pushSubscriptions.filter(
-                                s => s.endpoint !== sub.endpoint
-                            );
-                        }
-                    }
-                }
-
-                if (failedCount > 0) {
-                    await user.save();
-                    console.log('⚠️ 已移除', failedCount, '个失效订阅');
-                }
-
-                console.log(`✅ 推送通知发送完成: ${successCount}成功, ${failedCount}失败`);
-
+                await sendPushNotification(user.pushSubscription, payload);
+                console.log('✅ AI回复推送通知已发送');
             } catch (pushError) {
-                console.error('❌ 发送推送通知时发生异常:', pushError.message, pushError.stack);
+                console.error('❌ AI回复推送失败:', pushError.message);
+                if (pushError.statusCode === 410) {
+                    user.pushSubscription = null;
+                    await user.save();
+                }
             }
-        } else {
-            console.log('ℹ️ 用户未配置推送订阅，跳过推送通知');
         }
 
     } catch (error) {
         console.error('❌ 处理AI回复失败:', error.message);
-        // 出错时也发送"停止输入"事件
-        try {
-            const io = require('../app').io;
-            if (io && aiParticipant) {
-                io.emit('typing', {
-                    chatId,
-                    userId: aiParticipant,
-                    typing: false
-                });
-            }
-        } catch (e) {
-            console.error('发送停止输入事件失败:', e.message);
-        }
-    } finally {
-        // 清理处理状态，允许下次调用
-        processingChats.delete(chatId);
     }
 }
 
 // 导出函数供其他模块使用
 module.exports = {
-    // 导出函数供其他模块使用
     sendMessage: exports.sendMessage,
     getMessages: exports.getMessages,
     deleteMessage: exports.deleteMessage,
     deleteAllMessages: exports.deleteAllMessages,
     getUnreadCount: exports.getUnreadCount,
-    markMessagesAsRead: exports.markMessagesAsRead,
     processAIReply
 };
