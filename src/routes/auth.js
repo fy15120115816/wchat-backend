@@ -70,8 +70,12 @@ router.post('/test-notification', authMiddleware, async (req, res) => {
             return res.status(404).json({ success: false, message: '用户不存在' });
         }
         
-        // 检查是否有订阅（支持多设备）
-        const subscriptions = user.pushSubscriptions || [];
+        // 检查是否有订阅（支持多设备，兼容旧格式）
+        let subscriptions = user?.pushSubscriptions || [];
+        // 兼容旧格式：如果 pushSubscriptions 为空但 pushSubscription 存在，转换为数组
+        if ((!subscriptions || subscriptions.length === 0) && user?.pushSubscription) {
+            subscriptions = [user.pushSubscription];
+        }
         if (!subscriptions || subscriptions.length === 0) {
             return res.status(400).json({ success: false, message: '用户未开启通知，请先在设置中开启AI通知' });
         }
