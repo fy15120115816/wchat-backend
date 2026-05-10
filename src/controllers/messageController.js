@@ -460,8 +460,11 @@ async function processAIReply(chatId, senderId, content) {
             content: aiCharacter.persona || '你是一个乐于助人的AI助手。'
         };
 
-        // 调用AI API
-        const apiUrl = apiConfigData.apiUrl;
+        // 调用AI API（自动拼接 /chat/completions，与前端 proxy 行为一致）
+        const rawApiUrl = apiConfigData.apiUrl;
+        const apiUrl = (rawApiUrl.includes('/chat/completions') || rawApiUrl.includes('/text/chatcompletion'))
+            ? rawApiUrl
+            : rawApiUrl.replace(/\/$/, '') + '/chat/completions';
         const apiKey = apiConfigData.apiKey;
         const model = apiConfigData.model || 'gpt-3.5-turbo';
 
