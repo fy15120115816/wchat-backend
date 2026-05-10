@@ -433,14 +433,14 @@ async function processAIReply(chatId, senderId, content) {
         }
         console.log('✅ 找到用户:', user.username);
 
-        // 获取用户的API配置（优先 isDefault=true，否则取最新创建的）
-        const apiConfig = await ApiConfig.findOne({ userId: senderId, isDefault: true }) ||
-            await ApiConfig.findOne({ userId: senderId }).sort({ createdAt: -1 });
-        if (!apiConfig) {
+        // 获取用户的API配置（直接取该用户最新创建的配置，忽略 isDefault）
+        const apiConfig = await ApiConfig.find({ userId: senderId }).sort({ createdAt: -1 }).limit(1);
+        if (!apiConfig || apiConfig.length === 0) {
             console.log('❌ 用户未配置API');
             return;
         }
-        console.log('✅ 找到API配置:', apiConfig.apiUrl, 'isDefault:', apiConfig.isDefault);
+        const apiConfigData = apiConfig[0];
+        console.log('✅ 找到API配置:', apiConfigData.apiUrl, 'createdAt:', apiConfigData.createdAt);
 
         // 构建消息历史
         // ⚠️ senderId 可能是字符串（AI消息）或 ObjectId（用户消息，populate后变对象）
@@ -461,9 +461,9 @@ async function processAIReply(chatId, senderId, content) {
         };
 
         // 调用AI API
-        const apiUrl = apiConfig.apiUrl;
-        const apiKey = apiConfig.apiKey;
-        const model = apiConfig.model || 'gpt-3.5-turbo';
+        const apiUrl = apiConfigData.apiUrl;
+        const apiKey = apiConfigData.apiKey;
+        const model = apiConfigData.model || 'gpt-3.5-turbo';
 
         const requestBody = {
             model: model,
