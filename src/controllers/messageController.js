@@ -424,15 +424,10 @@ async function processAIReply(chatId, senderId, content) {
 
         // 构建消息历史
         // ⚠️ senderId 可能是字符串（AI消息）或 ObjectId（用户消息，populate后变对象）
-        // 字符串直接判断，ObjectId 需要从对象中取值
         const messages = await Message.find({ chatId }).sort({ createdAt: 1 });
         const history = messages.map(msg => {
-            let senderIdStr = '';
-            if (typeof msg.senderId === 'string') {
-                senderIdStr = msg.senderId;
-            } else if (msg.senderId && typeof msg.senderId === 'object' && msg.senderId.username) {
-                senderIdStr = msg.senderId.username;
-            }
+            // senderId 是字符串（'ai-xxx'）→ AI消息；是 ObjectId → 用户消息
+            const senderIdStr = (typeof msg.senderId === 'string') ? msg.senderId : '';
             return {
                 role: senderIdStr.startsWith('ai-') ? 'assistant' : 'user',
                 content: msg.content
