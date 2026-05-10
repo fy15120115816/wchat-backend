@@ -126,8 +126,8 @@ exports.getMessages = async (req, res) => {
         console.log('获取消息:', { chatId, userId: req.user.userId });
 
         // 获取消息（按时间倒序）
+        // 注意：不使用 populate，因为 senderId 可能是 'ai-' 开头的字符串，不是 ObjectId
         const messages = await Message.find({ chatId })
-            .populate('senderId', 'username avatar')
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
