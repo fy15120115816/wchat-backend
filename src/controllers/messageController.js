@@ -75,7 +75,7 @@ exports.sendMessage = async (req, res) => {
         // 发送推送通知给其他参与者
         if (chat) {
             for (const participantId of chat.participants) {
-                if (participantId.toString() !== senderId) {
+                if (participantId.toString() !== actualSenderId) {
                     const participant = await User.findById(participantId);
                     if (participant && participant.pushSubscription) {
                         try {
@@ -375,16 +375,21 @@ async function processAIReply(chatId, senderId, content) {
         }
         console.log('✅ 找到聊天:', chat._id);
 
-        // 找出AI角色参与者
-        const aiParticipant = chat.participants.find(p => p.toString().startsWith('ai-'));
+        // 找出AI角色参与者（兼容populate后的对象和原始ID）
+        const aiParticipant = chat.participants.find(p => {
+            const id = p._id ? p._id.toString() : p.toString();
+            return id.startsWith('ai-');
+        });
         if (!aiParticipant) {
             console.log('❌ 找不到AI角色参与者');
             return;
         }
-        console.log('✅ 找到AI角色:', aiParticipant);
+        // 获取AI角色ID（兼容populate后的对象和原始ID）
+        const aiParticipantId = aiParticipant._id ? aiParticipant._id.toString() : aiParticipant.toString();
+        console.log('✅ 找到AI角色:', aiParticipantId);
 
         // 获取AI角色信息
-        const aiCharacter = await AICharacter.findOne({ userId: aiParticipant });
+        const aiCharacter = await AICharacter.findOne({ userId: aiParticipantId });
         if (!aiCharacter) {
             console.log('❌ 找不到AI角色信息');
             return;
@@ -395,7 +400,7 @@ async function processAIReply(chatId, senderId, content) {
         const io = require('../app').io;
         io.emit('typing', {
             chatId,
-            userId: aiParticipant,
+            userId: aiParticipantId,
             typing: true
         });
         console.log('📝 发送正在输入事件');
@@ -491,7 +496,7 @@ async function processAIReply(chatId, senderId, content) {
         for (const chunk of aiReplyChunks) {
             const aiMessage = new Message({
                 chatId,
-                senderId: aiParticipant,
+                senderId: aiParticipantId,
                 content: chunk,
                 type: 'text'
             });
@@ -504,7 +509,7 @@ async function processAIReply(chatId, senderId, content) {
         // 发送"停止输入"事件
         io.emit('typing', {
             chatId,
-            userId: aiParticipant,
+            userId: aiParticipantId,
             typing: false
         });
         console.log('📝 发送停止输入事件');
