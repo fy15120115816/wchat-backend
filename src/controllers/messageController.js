@@ -423,14 +423,21 @@ async function processAIReply(chatId, senderId, content) {
         console.log('✅ 找到API配置:', apiConfig.apiUrl);
 
         // 构建消息历史
-        const messages = await Message.find({ chatId })
-            .sort({ createdAt: 1 })
-            .populate('senderId', 'username');
-
-        const history = messages.map(msg => ({
-            role: msg.senderId.username?.startsWith('ai-') ? 'assistant' : 'user',
-            content: msg.content
-        }));
+        // ⚠️ senderId 可能是字符串（AI消息）或 ObjectId（用户消息，populate后变对象）
+        // 字符串直接判断，ObjectId 需要从对象中取值
+        const messages = await Message.find({ chatId }).sort({ createdAt: 1 });
+        const history = messages.map(msg => {
+            let senderIdStr = '';
+            if (typeof msg.senderId === 'string') {
+                senderIdStr = msg.senderId;
+            } else if (msg.senderId && typeof msg.senderId === 'object' && msg.senderId.username) {
+                senderIdStr = msg.senderId.username;
+            }
+            return {
+                role: senderIdStr.startsWith('ai-') ? 'assistant' : 'user',
+                content: msg.content
+            };
+        });
 
         // 添加角色设定
         const systemMessage = {
@@ -474,7 +481,14 @@ async function processAIReply(chatId, senderId, content) {
         let aiReply = data.choices?.[0]?.message?.content;
 
         if (!aiReply) {
-            console.log('❌ AI返回为空');
+            console.log('❌ AI返回为空，使用Mock兜底');
+            io.emit('typing', { chatId, userId: aiParticipantId, typing: false });
+            const mockReplies = ['嗯嗯~', '好的呀~', '怎么啦？', '在呢~'];
+            const mockReply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
+            const aiMessage = new Message({ chatId, senderId: aiParticipantId, content: mockReply, type: 'text' });
+            await aiMessage.save();
+            io.emit('newMessage', { chatId, message: aiMessage });
+            console.log('✅ Mock 回复已保存:', mockReply);
             return;
         }
 
@@ -548,6 +562,24 @@ async function processAIReply(chatId, senderId, content) {
 
     } catch (error) {
         console.error('❌ 处理AI回复失败:', error.message);
+        // ⚠️ 必须发送 typing: false，否则前端一直显示"正在输入"
+        io.emit('typing', { chatId, userId: aiParticipantId, typing: false });
+        // ⚠️ Mock 兜底：当 API 不可用时生成一条模拟回复
+        const mockReplies = ['嗯嗯~', '好的呀~', '怎么啦？', '在呢~'];
+        const mockReply = mockReplies[Math.floor(Math.random() * mockReplies.length)];
+        try {
+            const aiMessage = new Message({
+                chatId,
+                senderId: aiParticipantId,
+                content: mockReply,
+                type: 'text'
+            });
+            await aiMessage.save();
+            io.emit('newMessage', { chatId, message: aiMessage });
+            console.log('✅ Mock 回复已保存:', mockReply);
+        } catch (mockError) {
+            console.error('❌ Mock 回复保存失败:', mockError.message);
+        }
     }
 }
 
