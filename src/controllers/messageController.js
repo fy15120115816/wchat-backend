@@ -28,7 +28,8 @@ exports.sendMessage = async (req, res) => {
             senderId: actualSenderId,
             content,
             type,
-            image
+            image,
+            isRead: true  // ✅ 修复：用户发送的消息默认为已读
         });
 
         await message.save();
@@ -135,11 +136,10 @@ exports.getMessages = async (req, res) => {
 
         console.log('找到消息:', messages.length, '条');
 
-        // 标记消息为已读
-        await Message.updateMany(
-            { chatId, senderId: { $ne: req.user.userId }, isRead: false },
-            { isRead: true }
-        );
+        // ✅ 修复：不在 getMessages 中自动标记已读！
+        // 之前这里会自动把消息标记为已读，导致 ChatsView 列表页加载消息时
+        // 未读消息被标记为已读，小红点显示一会就消失了。
+        // 已读标记应该只在用户真正进入聊天时通过 markMessagesAsRead 接口触发。
 
         res.status(200).json({
             success: true,
@@ -267,10 +267,14 @@ exports.getUnreadCount = async (req, res) => {
     try {
         const { chatId } = req.params;
 
+        // ✅ 修复：AI消息的senderId是字符串，需要同时排除ObjectId和字符串格式的userId
         const count = await Message.countDocuments({
             chatId,
-            senderId: { $ne: req.user.userId },
-            isRead: false
+            isRead: false,
+            $and: [
+                { senderId: { $ne: req.user.userId } },
+                { senderId: { $ne: req.user.userId.toString() } }
+            ]
         });
 
         res.status(200).json({
@@ -291,15 +295,31 @@ exports.getUnreadCount = async (req, res) => {
 exports.markMessagesAsRead = async (req, res) => {
     try {
         const { chatId } = req.params;
+        const userId = req.user.userId;
 
-        await Message.updateMany(
-            { chatId, senderId: { $ne: req.user.userId }, isRead: false },
+        console.log('📖 标记已读请求:', { chatId, userId });
+
+        // ✅ 修复：AI消息的senderId是字符串（如 'ai-xxx'），不是ObjectId
+        // 需要排除当前用户发送的消息，同时标记所有AI消息为已读
+        // 使用 $or 条件：要么senderId不是当前用户，要么senderId是AI（以ai-开头）
+        const result = await Message.updateMany(
+            {
+                chatId,
+                isRead: false,
+                $and: [
+                    { senderId: { $ne: userId } },
+                    { senderId: { $ne: userId.toString() } }
+                ]
+            },
             { isRead: true }
         );
 
+        console.log('✅ 标记已读结果:', result.modifiedCount, '条消息');
+
         res.status(200).json({
             success: true,
-            message: '消息已标记为已读'
+            message: '消息已标记为已读',
+            data: { modifiedCount: result.modifiedCount }
         });
     } catch (err) {
         console.error('标记消息为已读错误:', err);
@@ -576,6 +596,22 @@ async function processAIReply(chatId, senderId, content) {
         });
         console.log('📝 发送停止输入事件');
 
+        // ✅ 修复：通过WebSocket发送newMessage事件通知前端
+        // 之前只在Mock兜底时发送，正常AI回复没有发送，导致前端只能靠轮询获取消息
+        for (const chunk of aiReplyChunks) {
+            io.emit('newMessage', {
+                chatId,
+                message: {
+                    chatId,
+                    senderId: aiParticipantStr,
+                    content: chunk,
+                    type: 'text',
+                    createdAt: new Date()
+                }
+            });
+        }
+        console.log('✅ 已通过WebSocket发送AI回复通知，共', aiReplyChunks.length, '段');
+
         // 更新聊天的最后消息
         if (lastAiMessage) {
             await Chat.findByIdAndUpdate(chatId, {
@@ -608,14 +644,30 @@ async function processAIReply(chatId, senderId, content) {
                     body: aiReply.slice(0, 50),
                     url: `/chat/${chatId}`
                 };
-                await sendPushNotification(user.pushSubscription, payload);
+
+                // 向所有订阅设备发送推送通知
+                for (const subscription of subscriptions) {
+                    try {
+                        await sendPushNotification(subscription, payload);
+                        console.log('✅ AI回复推送通知已发送到设备');
+                    } catch (pushError) {
+                        console.error('❌ AI回复推送失败:', pushError.message);
+                        if (pushError.statusCode === 410) {
+                            // 订阅过期，从数组中移除
+                            const index = subscriptions.indexOf(subscription);
+                            if (index > -1) {
+                                subscriptions.splice(index, 1);
+                            }
+                        }
+                    }
+                }
+
+                // 更新用户的订阅列表
+                user.pushSubscription = subscriptions.length > 0 ? subscriptions[0] : null;
+                await user.save();
                 console.log('✅ AI回复推送通知已发送');
             } catch (pushError) {
                 console.error('❌ AI回复推送失败:', pushError.message);
-                if (pushError.statusCode === 410) {
-                    user.pushSubscription = null;
-                    await user.save();
-                }
             }
         }
 
