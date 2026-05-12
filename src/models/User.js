@@ -38,6 +38,10 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    chatFormatPrompt: {
+        type: String,
+        default: ''
+    },
     // API配置选择
     globalApiConfigId: { type: String, default: null },   // 全局配置
     textApiConfigId: { type: String, default: null },    // 文字消息配置
