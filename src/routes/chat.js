@@ -143,12 +143,10 @@ router.post('/proxy', async (req, res) => {
                     console.log('🔍 找到AI角色:', !!aiParticipant);
 
                     if (aiParticipant) {
-                        // 获取AI回复内容（不再在此处保存，processAIReply会保存）
+                        // AI回复由前端 chatQueue 处理，后端不保存AI消息
                         const aiReply = data.choices?.[0]?.message?.content;
                         if (aiReply) {
-                            // ✅ 只记录日志，不重复保存AI消息（processAIReply已经保存）
-                            console.log('✅ AI回复已获取（由processAIReply保存）:', aiReply.slice(0, 30));
-                            // 不再保存到Message，processAIReply会处理
+                            console.log('✅ AI回复已获取（由前端 chatQueue 处理）:', aiReply.slice(0, 30));
                         }
                     }
                 } catch (saveError) {

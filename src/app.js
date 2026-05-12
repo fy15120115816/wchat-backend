@@ -126,14 +126,10 @@ io.on('connection', (socket) => {
                 if (hasAIParticipant) {
                     const isAISender = senderId.toString().startsWith('ai-');
                     if (!isAISender) {
-                        console.log('✅ WebSocket触发processAIReply');
-                        // 导入processAIReply函数
-                        const messageController = require('./controllers/messageController');
-                        messageController.processAIReply(chatId, senderId, content).catch(err => {
-                            console.error('❌ WebSocket processAIReply 抛出异常:', err.message);
-                        });
+                        // ⚠️ 禁用：前端 chatQueue 已负责 AI 回复，后端不再重复调用
+                        console.log('✅ WebSocket检测到AI角色聊天，AI回复由前端 chatQueue 处理');
                     } else {
-                        console.log('❌ 发送者是AI，跳过processAIReply');
+                        console.log('❌ 发送者是AI，跳过');
                     }
                 }
             }

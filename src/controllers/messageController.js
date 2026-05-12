@@ -64,13 +64,14 @@ exports.sendMessage = async (req, res) => {
         }
         console.log('聊天记录已更新:', chatId);
 
-        // 如果是AI角色聊天，后台异步处理AI回复（不阻塞响应）
+        // ⚠️ 禁用后端 processAIReply：前端 chatQueue 已经负责调用 AI API 并写入 localStorage
+        // 后端再调用一次会导致双重回复（两次 AI 调用结果不同，内容去重失败，出现重复消息）
+        // 后端只负责保存用户消息到 MongoDB，AI 回复完全由前端处理
         console.log('🔍 检查AI角色聊天: chatId:', chatId, 'chat:', !!chat, 'participants:', chat?.participants);
         if (chat && chat.participants.some(p => p.toString().startsWith('ai-'))) {
-            console.log('✅ 检测到AI角色聊天，准备调用processAIReply');
-            processAIReply(chatId, actualSenderId, content).catch(console.error);
+            console.log('✅ 检测到AI角色聊天，AI回复由前端 chatQueue 处理，后端不再重复调用');
         } else {
-            console.log('❌ 不是AI角色聊天，不调用processAIReply');
+            console.log('❌ 不是AI角色聊天');
         }
 
         // 发送推送通知给其他参与者
