@@ -31,6 +31,54 @@ const aiCharacterSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    gender: {
+        type: String,
+        default: 'unknown'
+    },
+    hasActions: {
+        type: Boolean,
+        default: false
+    },
+    hasInnerThoughts: {
+        type: Boolean,
+        default: false
+    },
+    maxReplyMessages: {
+        type: Number,
+        default: 3
+    },
+    autoReact: {
+        type: Boolean,
+        default: false
+    },
+    autoPostMoments: {
+        type: Boolean,
+        default: false
+    },
+    momentsFrequency: {
+        type: String,
+        default: 'often'
+    },
+    autoProactiveMsg: {
+        type: Boolean,
+        default: false
+    },
+    autoMsgInterval: {
+        type: Number,
+        default: 10
+    },
+    quietHoursEnabled: {
+        type: Boolean,
+        default: false
+    },
+    quietHoursStart: {
+        type: Number,
+        default: 0
+    },
+    quietHoursEnd: {
+        type: Number,
+        default: 8
+    },
     userId: {
         type: String,
         required: true

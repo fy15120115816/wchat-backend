@@ -3,7 +3,12 @@ const AICharacter = require('../models/AICharacter');
 // 创建 AI 角色
 exports.createCharacter = async (req, res) => {
     try {
-        const { id, name, avatar, persona, description, personality, tags = [], note = '' } = req.body;
+        const {
+            id, name, avatar, persona, description, personality, tags = [], note = '',
+            gender, hasActions, hasInnerThoughts, maxReplyMessages,
+            autoReact, autoPostMoments, momentsFrequency, autoProactiveMsg, autoMsgInterval,
+            quietHoursEnabled, quietHoursStart, quietHoursEnd
+        } = req.body;
         const userId = req.user.userId;
 
         console.log('📝 收到创建角色请求:', { userId, name, id });
@@ -24,7 +29,19 @@ exports.createCharacter = async (req, res) => {
             personality,
             tags,
             note,
-            userId
+            userId,
+            ...(gender !== undefined && { gender }),
+            ...(hasActions !== undefined && { hasActions }),
+            ...(hasInnerThoughts !== undefined && { hasInnerThoughts }),
+            ...(maxReplyMessages !== undefined && { maxReplyMessages }),
+            ...(autoReact !== undefined && { autoReact }),
+            ...(autoPostMoments !== undefined && { autoPostMoments }),
+            ...(momentsFrequency !== undefined && { momentsFrequency }),
+            ...(autoProactiveMsg !== undefined && { autoProactiveMsg }),
+            ...(autoMsgInterval !== undefined && { autoMsgInterval }),
+            ...(quietHoursEnabled !== undefined && { quietHoursEnabled }),
+            ...(quietHoursStart !== undefined && { quietHoursStart }),
+            ...(quietHoursEnd !== undefined && { quietHoursEnd })
         });
 
         await character.save();
@@ -102,7 +119,12 @@ exports.updateCharacter = async (req, res) => {
     try {
         const { characterId } = req.params;
         const userId = req.user.userId;
-        const { name, avatar, persona, description, personality, tags, note, isActive, memory } = req.body;
+        const {
+            name, avatar, persona, description, personality, tags, note, isActive, memory,
+            gender, hasActions, hasInnerThoughts, maxReplyMessages,
+            autoReact, autoPostMoments, momentsFrequency, autoProactiveMsg, autoMsgInterval,
+            quietHoursEnabled, quietHoursStart, quietHoursEnd
+        } = req.body;
 
         console.log('✏️ 更新角色:', { userId, characterId, hasMemory: !!memory });
 
@@ -116,6 +138,18 @@ exports.updateCharacter = async (req, res) => {
         if (note !== undefined) updates.note = note;
         if (isActive !== undefined) updates.isActive = isActive;
         if (memory !== undefined) updates.memory = memory;
+        if (gender !== undefined) updates.gender = gender;
+        if (hasActions !== undefined) updates.hasActions = hasActions;
+        if (hasInnerThoughts !== undefined) updates.hasInnerThoughts = hasInnerThoughts;
+        if (maxReplyMessages !== undefined) updates.maxReplyMessages = maxReplyMessages;
+        if (autoReact !== undefined) updates.autoReact = autoReact;
+        if (autoPostMoments !== undefined) updates.autoPostMoments = autoPostMoments;
+        if (momentsFrequency !== undefined) updates.momentsFrequency = momentsFrequency;
+        if (autoProactiveMsg !== undefined) updates.autoProactiveMsg = autoProactiveMsg;
+        if (autoMsgInterval !== undefined) updates.autoMsgInterval = autoMsgInterval;
+        if (quietHoursEnabled !== undefined) updates.quietHoursEnabled = quietHoursEnabled;
+        if (quietHoursStart !== undefined) updates.quietHoursStart = quietHoursStart;
+        if (quietHoursEnd !== undefined) updates.quietHoursEnd = quietHoursEnd;
         updates.updatedAt = Date.now();
 
         const character = await AICharacter.findOneAndUpdate(
